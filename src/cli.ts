@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import * as path from 'path'
+import * as fs from 'fs'
 import { Command } from 'commander'
 import chalk from 'chalk'
 import { scanProject } from './scan'
@@ -42,6 +43,41 @@ function createFileLink(filePath: string, line: number, displayText: string): st
   const absolutePath = path.resolve(filePath)
   const fileUrl = `file://${absolutePath}:${line}:1`
   return `\x1b]8;;${fileUrl}\x1b\\${displayText}\x1b]8;;\x1b\\`
+}
+
+// Find default source directory
+function findDefaultSrc(): string {
+  const candidates = ['src', 'app', 'lib', '.']
+  for (const dir of candidates) {
+    if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+      return dir
+    }
+  }
+  return '.'
+}
+
+// Find default locale directory
+function findDefaultLocale(): string {
+  const candidates = [
+    'src/locales',
+    'src/i18n',
+    'locales',
+    'i18n',
+    'public/locales',
+    'messages',
+    'lang',
+    'src/lang'
+  ]
+  for (const dir of candidates) {
+    if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+      // Check if it contains JSON files
+      const files = fs.readdirSync(dir)
+      if (files.some(f => f.endsWith('.json'))) {
+        return dir
+      }
+    }
+  }
+  return 'locales'
 }
 
 // Render a complete locale report in a box
@@ -130,7 +166,7 @@ function renderLocaleReportBox(
 
 const program = new Command()
 
-program.name('i18n-tree-shaking').description('🌲 AST-based i18n key tree-shaking tool')
+program.name('i18n-pruner').description('🌳 AST-based i18n key pruning tool')
 
 // ========================
 // Scan Command
@@ -138,11 +174,23 @@ program.name('i18n-tree-shaking').description('🌲 AST-based i18n key tree-shak
 program
   .command('scan')
   .description('Scan and audit i18n keys')
-  .requiredOption('--src <path>', 'Source code directory')
-  .requiredOption('--locale <path>', 'Locale files directory')
+  .option('--src <path>', 'Source code directory', findDefaultSrc())
+  .option('--locale <path>', 'Locale JSON files directory', findDefaultLocale())
   .option('--show-used', 'Show used keys in report', false)
   .action(async (options) => {
     console.log(chalk.bold.cyan('\n🌳 i18n Pruner\n'))
+
+    // Validate paths exist
+    if (!fs.existsSync(options.src)) {
+      console.log(chalk.red(`✗ Source directory not found: ${options.src}`))
+      console.log(chalk.gray('Use --src to specify the correct path'))
+      process.exit(1)
+    }
+    if (!fs.existsSync(options.locale)) {
+      console.log(chalk.red(`✗ Locale directory not found: ${options.locale}`))
+      console.log(chalk.gray('Use --locale to specify the correct path'))
+      process.exit(1)
+    }
 
     const scanResult = await scanProject(options.src)
     const localeReports = generateLocaleReports(options.locale, scanResult.usedKeys)
@@ -201,11 +249,23 @@ program
 program
   .command('remove')
   .description('Remove unused i18n keys from all locale files')
-  .requiredOption('--src <path>', 'Source code directory')
-  .requiredOption('--locale <path>', 'Locale files directory')
+  .option('--src <path>', 'Source code directory', findDefaultSrc())
+  .option('--locale <path>', 'Locale JSON files directory', findDefaultLocale())
   .option('-y, --yes', 'Skip confirmation prompt', false)
   .action(async (options) => {
-    console.log(chalk.bold.cyan('\n🗑️  i18n Tree Shaking - Remove\n'))
+    console.log(chalk.bold.cyan('\n🗑️  i18n Pruner - Remove\n'))
+
+    // Validate paths exist
+    if (!fs.existsSync(options.src)) {
+      console.log(chalk.red(`✗ Source directory not found: ${options.src}`))
+      console.log(chalk.gray('Use --src to specify the correct path'))
+      process.exit(1)
+    }
+    if (!fs.existsSync(options.locale)) {
+      console.log(chalk.red(`✗ Locale directory not found: ${options.locale}`))
+      console.log(chalk.gray('Use --locale to specify the correct path'))
+      process.exit(1)
+    }
 
     const scanResult = await scanProject(options.src)
     const localeKeys = loadLocaleKeys(options.locale)

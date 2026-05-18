@@ -38,6 +38,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const path = __importStar(require("path"));
+const fs = __importStar(require("fs"));
 const commander_1 = require("commander");
 const chalk_1 = __importDefault(require("chalk"));
 const scan_1 = require("./scan");
@@ -70,6 +71,39 @@ function createFileLink(filePath, line, displayText) {
     const absolutePath = path.resolve(filePath);
     const fileUrl = `file://${absolutePath}:${line}:1`;
     return `\x1b]8;;${fileUrl}\x1b\\${displayText}\x1b]8;;\x1b\\`;
+}
+// Find default source directory
+function findDefaultSrc() {
+    const candidates = ['src', 'app', 'lib', '.'];
+    for (const dir of candidates) {
+        if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+            return dir;
+        }
+    }
+    return '.';
+}
+// Find default locale directory
+function findDefaultLocale() {
+    const candidates = [
+        'src/locales',
+        'src/i18n',
+        'locales',
+        'i18n',
+        'public/locales',
+        'messages',
+        'lang',
+        'src/lang'
+    ];
+    for (const dir of candidates) {
+        if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+            // Check if it contains JSON files
+            const files = fs.readdirSync(dir);
+            if (files.some(f => f.endsWith('.json'))) {
+                return dir;
+            }
+        }
+    }
+    return 'locales';
 }
 // Render a complete locale report in a box
 function renderLocaleReportBox(fileName, filePath, totalKeys, usedKeys, unusedKeys, missingKeys, showUsed) {
@@ -135,18 +169,29 @@ function renderLocaleReportBox(fileName, filePath, totalKeys, usedKeys, unusedKe
     return lines.join('\n');
 }
 const program = new commander_1.Command();
-program.name('i18n-tree-shaking').description('🌲 AST-based i18n key tree-shaking tool');
+program.name('i18n-pruner').description('🌳 AST-based i18n key pruning tool');
 // ========================
 // Scan Command
 // ========================
 program
     .command('scan')
     .description('Scan and audit i18n keys')
-    .requiredOption('--src <path>', 'Source code directory')
-    .requiredOption('--locale <path>', 'Locale files directory')
+    .option('--src <path>', 'Source code directory', findDefaultSrc())
+    .option('--locale <path>', 'Locale JSON files directory', findDefaultLocale())
     .option('--show-used', 'Show used keys in report', false)
     .action(async (options) => {
     console.log(chalk_1.default.bold.cyan('\n🌳 i18n Pruner\n'));
+    // Validate paths exist
+    if (!fs.existsSync(options.src)) {
+        console.log(chalk_1.default.red(`✗ Source directory not found: ${options.src}`));
+        console.log(chalk_1.default.gray('Use --src to specify the correct path'));
+        process.exit(1);
+    }
+    if (!fs.existsSync(options.locale)) {
+        console.log(chalk_1.default.red(`✗ Locale directory not found: ${options.locale}`));
+        console.log(chalk_1.default.gray('Use --locale to specify the correct path'));
+        process.exit(1);
+    }
     const scanResult = await (0, scan_1.scanProject)(options.src);
     const localeReports = (0, locale_1.generateLocaleReports)(options.locale, scanResult.usedKeys);
     // Global summary
@@ -189,11 +234,22 @@ program
 program
     .command('remove')
     .description('Remove unused i18n keys from all locale files')
-    .requiredOption('--src <path>', 'Source code directory')
-    .requiredOption('--locale <path>', 'Locale files directory')
+    .option('--src <path>', 'Source code directory', findDefaultSrc())
+    .option('--locale <path>', 'Locale JSON files directory', findDefaultLocale())
     .option('-y, --yes', 'Skip confirmation prompt', false)
     .action(async (options) => {
-    console.log(chalk_1.default.bold.cyan('\n🗑️  i18n Tree Shaking - Remove\n'));
+    console.log(chalk_1.default.bold.cyan('\n🗑️  i18n Pruner - Remove\n'));
+    // Validate paths exist
+    if (!fs.existsSync(options.src)) {
+        console.log(chalk_1.default.red(`✗ Source directory not found: ${options.src}`));
+        console.log(chalk_1.default.gray('Use --src to specify the correct path'));
+        process.exit(1);
+    }
+    if (!fs.existsSync(options.locale)) {
+        console.log(chalk_1.default.red(`✗ Locale directory not found: ${options.locale}`));
+        console.log(chalk_1.default.gray('Use --locale to specify the correct path'));
+        process.exit(1);
+    }
     const scanResult = await (0, scan_1.scanProject)(options.src);
     const localeKeys = (0, locale_1.loadLocaleKeys)(options.locale);
     const unusedKeys = [...localeKeys].filter((key) => !scanResult.usedKeys.has(key));
