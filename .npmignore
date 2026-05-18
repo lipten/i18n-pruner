@@ -1,0 +1,9 @@
+src/
+react-test-app/
+test-src/
+locales/
+.vscode/
+*.log
+.DS_Store
+final-report.json
+i18n-report.json
