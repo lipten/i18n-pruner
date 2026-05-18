@@ -1,0 +1,29 @@
+{
+  "home": {
+    "title": "首页",
+    "subtitle": "这是一个测试应用",
+    "buttons": {
+      "submit": "提交",
+      "cancel": "取消"
+    }
+  },
+  "checkout": {
+    "pay": "立即支付",
+    "total": "总金额"
+  },
+  "global": {
+    "success": "成功",
+    "error": "错误",
+    "loading": "加载中..."
+  },
+  "profile": {
+    "name": "姓名",
+    "email": "邮箱地址"
+  },
+  "common": {
+    "welcome": "欢迎使用我们的应用"
+  },
+  "user": {
+    "profile": "用户资料"
+  }
+}

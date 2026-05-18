@@ -1,0 +1,30 @@
+{
+  "usedKeys": [
+    "home.title",
+    "home.subtitle",
+    "home.buttons.submit",
+    "home.buttons.cancel",
+    "checkout.pay",
+    "checkout.total",
+    "profile.name",
+    "profile.email",
+    "common.welcome",
+    "user.profile"
+  ],
+  "unusedKeys": [
+    "legacy.oldButton",
+    "legacy.deprecated"
+  ],
+  "dynamicKeys": [
+    {
+      "file": "/Users/channelwill/works/projects/i18n-audit/test-src/example.tsx",
+      "line": 48,
+      "code": "`${channel}.title`"
+    },
+    {
+      "file": "/Users/channelwill/works/projects/i18n-audit/test-src/example.tsx",
+      "line": 59,
+      "code": "{dynamicKey}"
+    }
+  ]
+}

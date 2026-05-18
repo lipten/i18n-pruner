@@ -1,0 +1,12 @@
+{
+  "profile": {
+    "name": "Name",
+    "email": "Email Address"
+  },
+  "common": {
+    "welcome": "Welcome to our app"
+  },
+  "user": {
+    "profile": "User Profile"
+  }
+}

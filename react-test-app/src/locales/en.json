@@ -1,0 +1,29 @@
+{
+  "home": {
+    "title": "Welcome",
+    "subtitle": "This is a test application",
+    "buttons": {
+      "submit": "Submit",
+      "cancel": "Cancel"
+    }
+  },
+  "checkout": {
+    "pay": "Pay Now",
+    "total": "Total Amount"
+  },
+  "global": {
+    "success": "Success",
+    "error": "Error",
+    "loading": "Loading..."
+  },
+  "profile": {
+    "name": "Name",
+    "email": "Email Address"
+  },
+  "common": {
+    "welcome": "Welcome to our app"
+  },
+  "user": {
+    "profile": "User Profile"
+  }
+}

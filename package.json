@@ -1,0 +1,39 @@
+{
+  "name": "i18n-pruner",
+  "version": "0.0.1",
+  "description": "AST-based i18n key pruning tool - remove unused translation keys from your locale files",
+  "type": "commonjs",
+  "bin": {
+    "i18n-pruner": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "node dist/cli.js scan --src src --locale locales",
+    "test": "node dist/cli.js scan --src react-test-app/src --locale react-test-app/src/locales"
+  },
+  "keywords": [
+    "i18n",
+    "prune",
+    "internationalization",
+    "locale",
+    "translation",
+    "ast",
+    "unused-keys",
+    "cleanup"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@types/node": "^25.7.0",
+    "@types/flat": "^5.0.5",
+    "chalk": "^4.1.2",
+    "commander": "^9.5.0",
+    "fast-glob": "^3.3.3",
+    "flat": "^5.0.2",
+    "ts-morph": "^17.0.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.0.0"
+  }
+}

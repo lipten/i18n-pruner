@@ -1,0 +1,23 @@
+{
+  "home": {
+    "title": "Welcome",
+    "subtitle": "This is a test application",
+    "buttons": {
+      "submit": "Submit",
+      "cancel": "Cancel"
+    }
+  },
+  "checkout": {
+    "pay": "Pay Now",
+    "total": "Total Amount"
+  },
+  "global": {
+    "success": "Success",
+    "error": "Error",
+    "loading": "Loading..."
+  },
+  "legacy": {
+    "oldButton": "Old Button Text",
+    "deprecated": "This will be removed"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "home": {
+    "title": "首页",
+    "subtitle": "这是一个测试应用",
+    "buttons": {
+      "submit": "提交",
+      "cancel": "取消"
+    }
+  },
+  "checkout": {
+    "pay": "立即支付",
+    "total": "总金额"
+  },
+  "global": {
+    "success": "成功",
+    "error": "错误",
+    "loading": "加载中..."
+  },
+  "legacy": {
+    "oldButton": "旧按钮文本",
+    "deprecated": "这个将被删除"
+  }
+}
