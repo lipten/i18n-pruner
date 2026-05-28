@@ -220,8 +220,9 @@ program
         console.log(chalk_1.default.bold('╠' + '═'.repeat(DW) + '╣'));
         for (let i = 0; i < scanResult.dynamicKeys.length; i++) {
             const dk = scanResult.dynamicKeys[i];
-            const locText = `${dk.file.split('/').pop() || dk.file}:${dk.line}`;
-            const content = `  [${i}] ${padEndVisible(locText, 25)} ${dk.code}`;
+            const relativePath = path.relative(process.cwd(), dk.file);
+            const locText = `${relativePath}:${dk.line}`;
+            const content = `  [${i}] ${padEndVisible(locText, 35)} ${dk.code}`;
             console.log('║' + padEndVisible(content, DW) + '║');
         }
         console.log(chalk_1.default.bold('╚' + '═'.repeat(DW) + '╝'));
