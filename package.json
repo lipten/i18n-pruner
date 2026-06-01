@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "watch": "tsc --watch",
     "dev": "node dist/cli.js scan --src src --locale locales",
     "test": "node dist/cli.js scan --src react-test-app/src --locale react-test-app/src/locales"
   },

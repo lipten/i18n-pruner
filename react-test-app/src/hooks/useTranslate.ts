@@ -11,5 +11,5 @@ declare global {
 export function useTranslate(namespace: string) {
   const { t } = useTranslation(namespace)
   
-  return (key: string) => t(key)
+  return (key: string) => t(key) // i18n-pruner-ignore-line
 }

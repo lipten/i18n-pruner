@@ -12,6 +12,7 @@
 - **🗑️ One-click removal** - Safely delete unused keys from all locale files simultaneously
 - **🔗 Clickable links** - Terminal hyperlinks to jump directly to key definitions in locale files
 - **⚠️ Dynamic detection** - Flags dynamic/interpolated keys that need manual review
+- **🛡️ Project config** - Protect dynamic/runtime keys and ignore project-specific files or lines
 - **🔧 Smart defaults** - Auto-detects common source and locale directory structures
 
 ## Quick Start
@@ -133,6 +134,9 @@ npx i18n-pruner scan --src ./app --locale ./app/i18n
 
 # Show used keys (hidden by default)
 npx i18n-pruner scan --show-used
+
+# Use a config file
+npx i18n-pruner scan --config ./i18n-pruner.config.json
 ```
 
 **Options:**
@@ -141,6 +145,7 @@ npx i18n-pruner scan --show-used
 |--------|----------|---------|-------------|
 | `--src <path>` | No | `src` or `.` | Source code directory to scan. Auto-detects: `src`, `app`, `lib`, current directory |
 | `--locale <path>` | No | `src/locales` or `locales` | Locale JSON files directory. Auto-detects: `src/locales`, `src/i18n`, `locales`, `i18n`, `public/locales`, `messages`, `lang` |
+| `--config <path>` | No | `i18n-pruner.config.json` | Optional JSON config file |
 | `--show-used` | No | `false` | Show used keys in report |
 
 **Default Detection Order:**
@@ -219,6 +224,9 @@ npx i18n-pruner remove --yes
 
 # Specify custom paths
 npx i18n-pruner remove --src ./app --locale ./app/i18n --yes
+
+# Use a config file
+npx i18n-pruner remove --config ./i18n-pruner.config.json
 ```
 
 **Options:**
@@ -227,6 +235,7 @@ npx i18n-pruner remove --src ./app --locale ./app/i18n --yes
 |--------|----------|---------|-------------|
 | `--src <path>` | No | `src` or `.` | Source code directory to scan |
 | `--locale <path>` | No | `src/locales` or `locales` | Locale JSON files directory |
+| `--config <path>` | No | `i18n-pruner.config.json` | Optional JSON config file |
 | `-y, --yes` | No | `false` | Skip confirmation prompt |
 
 **Example output:**
@@ -274,6 +283,112 @@ zh.json:
 ✓ Done!
 ```
 
+## Configuration
+
+i18n-pruner automatically loads `i18n-pruner.config.json` from the current working directory. You can also pass a custom path with `--config`. Command-line `--src` and `--locale` take priority over config values.
+
+```json
+{
+  "src": "src",
+  "locale": "src/locales",
+  "protectedKeys": ["email.title", "legacy.*", "runtime.**"],
+  "ignorePaths": ["**/*.stories.tsx", "src/hooks/useTranslate.ts"],
+  "ignoreLines": [
+    { "file": "src/components/Foo.tsx", "lines": [42] },
+    { "file": "src/components/Bar.tsx", "ranges": [{ "start": 10, "end": 20 }] }
+  ],
+  "ignoreComments": {
+    "currentLine": "i18n-pruner-ignore-line",
+    "nextLine": "i18n-pruner-ignore-next-line"
+  },
+  "functionNames": ["t", "window.t", "$t"],
+  "transComponents": ["Trans"],
+  "transKeyAttributes": ["i18nKey"],
+  "namespaceHooks": [{ "name": "useTranslate", "namespaceArgIndex": 0 }],
+  "dynamicKeyPolicy": "warn",
+  "remove": {
+    "blockOnDynamicKeys": false
+  }
+}
+```
+
+### Protect Keys from Removal
+
+Use `protectedKeys` for dynamic, runtime, backend-driven, or migration keys that are valid even when no static source reference exists.
+
+```json
+{
+  "protectedKeys": ["email.title", "legacy.*", "runtime.**"]
+}
+```
+
+- `email.title` protects one exact key.
+- `legacy.*` protects one segment below `legacy`, such as `legacy.oldButton`.
+- `runtime.**` protects any nested key below `runtime`.
+
+Protected keys are excluded from unused and remove candidates, but they are reported separately from keys actually used in code.
+
+### Ignore Files, Lines, and Comments
+
+Use `ignorePaths` for wrappers, generated files, stories, mocks, or tests that should not be scanned:
+
+```json
+{
+  "ignorePaths": ["src/hooks/useTranslate.ts", "**/*.stories.tsx"]
+}
+```
+
+Use `ignoreLines` for targeted suppressions:
+
+```json
+{
+  "ignoreLines": [
+    { "file": "src/components/Foo.tsx", "lines": [42] },
+    { "file": "src/components/Bar.tsx", "ranges": [{ "start": 10, "end": 20 }] }
+  ]
+}
+```
+
+Or suppress in source with comments:
+
+```tsx
+t(dynamicKey) // i18n-pruner-ignore-line
+
+// i18n-pruner-ignore-next-line
+t(dynamicKey)
+```
+
+### Customize i18n Patterns
+
+The defaults detect `t`, `window.t`, `$t`, `<Trans i18nKey="...">`, and `useTranslate('namespace')`. Override these when a project uses different helpers:
+
+```json
+{
+  "functionNames": ["t", "i18n.t", "window.t"],
+  "transComponents": ["Trans", "I18nText"],
+  "transKeyAttributes": ["i18nKey", "messageKey"],
+  "namespaceHooks": [{ "name": "useTranslate", "namespaceArgIndex": 0 }]
+}
+```
+
+### Dynamic Key Policy
+
+Dynamic keys are reported by default. You can change this behavior:
+
+```json
+{
+  "dynamicKeyPolicy": "warn",
+  "remove": {
+    "blockOnDynamicKeys": true
+  }
+}
+```
+
+- `warn` reports dynamic keys and continues.
+- `ignore` hides dynamic key warnings.
+- `error` exits with a non-zero status when dynamic keys are found.
+- `remove.blockOnDynamicKeys` stops `remove` when dynamic keys are found, unless `dynamicKeyPolicy` is `ignore`.
+
 ## Report Explained
 
 ### Global Summary
@@ -281,7 +396,8 @@ zh.json:
 Shows aggregated statistics across all locale files:
 - **Total Keys** - All keys defined in any locale file
 - **Used in Code** - Keys actually referenced in your source code
-- **Unused (all locales)** - Keys defined but never used
+- **Protected by Config** - Locale keys matched by `protectedKeys`
+- **Unused (all locales)** - Keys defined but neither used nor protected
 - **Dynamic Risk** - Keys using dynamic/interpolated values
 
 ### Per-locale Report
@@ -289,7 +405,8 @@ Shows aggregated statistics across all locale files:
 Each language file gets its own boxed report:
 - **Summary** - Counts for this specific file
 - **Used Keys** - Keys used in code and present in this file (with `--show-used`)
-- **Unused Keys** - Keys present in this file but not used in code (safe to remove)
+- **Protected Keys** - Keys kept by config even when not found in source code
+- **Unused Keys** - Keys present in this file but not used or protected
 - **Missing Keys** - Keys used in code but missing from this file (translations not yet added)
 
 ### Dynamic Keys

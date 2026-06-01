@@ -25,5 +25,8 @@
   },
   "user": {
     "profile": "User Profile"
+  },
+  "email": {
+    "title": "Email title"
   }
 }

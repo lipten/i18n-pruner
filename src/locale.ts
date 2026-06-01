@@ -13,6 +13,7 @@ export interface LocaleReport {
   filePath: string
   totalKeys: number
   usedKeys: string[]
+  protectedKeys: string[]
   unusedKeys: string[]
   missingKeys: string[]  // keys used in code but not in this locale file
 }
@@ -49,7 +50,8 @@ export function getLocaleFiles(localePath: string): string[] {
 // Generate report for each locale file
 export function generateLocaleReports(
   localePath: string,
-  usedKeys: Set<string>
+  usedKeys: Set<string>,
+  protectedKeys: Set<string> = new Set()
 ): LocaleReport[] {
   const reports: LocaleReport[] = []
   const files = getLocaleFiles(localePath)
@@ -57,11 +59,14 @@ export function generateLocaleReports(
   for (const file of files) {
     const fileKeys = loadLocaleKeysFromFile(file)
     const usedInFile: string[] = []
+    const protectedInFile: string[] = []
     const unusedInFile: string[] = []
 
     fileKeys.forEach((key) => {
       if (usedKeys.has(key)) {
         usedInFile.push(key)
+      } else if (protectedKeys.has(key)) {
+        protectedInFile.push(key)
       } else {
         unusedInFile.push(key)
       }
@@ -80,6 +85,7 @@ export function generateLocaleReports(
       filePath: file,
       totalKeys: fileKeys.size,
       usedKeys: usedInFile.sort(),
+      protectedKeys: protectedInFile.sort(),
       unusedKeys: unusedInFile.sort(),
       missingKeys: missingInFile.sort()
     })

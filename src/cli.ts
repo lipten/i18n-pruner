@@ -5,6 +5,8 @@ import * as fs from 'fs'
 import { Command } from 'commander'
 import chalk from 'chalk'
 import { scanProject } from './scan'
+import { loadConfig } from './config'
+import { resolveProtectedKeys } from './match'
 import { 
   loadLocaleKeys, 
   removeKeysFromLocales, 
@@ -13,37 +15,7 @@ import {
   generateLocaleReports
 } from './locale'
 
-// Strip all ANSI escape sequences (colors + hyperlinks)
-function stripAnsi(str: string): string {
-  // eslint-disable-next-line no-control-regex
-  return str.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\]8;[^\x1b]*\x1b\\/g, '').replace(/\x1b\\/g, '')
-}
-
-// Calculate visible width of a string
-function visibleWidth(str: string): number {
-  return stripAnsi(str).length
-}
-
-// padEnd that respects visible width (ignores ANSI codes)
-function padEndVisible(str: string, targetWidth: number): string {
-  const currentWidth = visibleWidth(str)
-  if (currentWidth >= targetWidth) return str
-  return str + ' '.repeat(targetWidth - currentWidth)
-}
-
-// padStart that respects visible width
-function padStartVisible(str: string, targetWidth: number): string {
-  const currentWidth = visibleWidth(str)
-  if (currentWidth >= targetWidth) return str
-  return ' '.repeat(targetWidth - currentWidth) + str
-}
-
-// Create a clickable file link for terminal
-function createFileLink(filePath: string, line: number, displayText: string): string {
-  const absolutePath = path.resolve(filePath)
-  const fileUrl = `file://${absolutePath}:${line}:1`
-  return `\x1b]8;;${fileUrl}\x1b\\${displayText}\x1b]8;;\x1b\\`
-}
+// No more file links, just plain text
 
 // Find default source directory
 function findDefaultSrc(): string {
@@ -80,88 +52,132 @@ function findDefaultLocale(): string {
   return 'locales'
 }
 
-// Render a complete locale report in a box
-function renderLocaleReportBox(
+// Print a separator line
+function printSeparator(char: string = '─'): void {
+  console.log(chalk.gray(char.repeat(60)))
+}
+
+// Print a section header
+function printSectionHeader(title: string): void {
+  console.log(chalk.bold.cyan(`\n▸ ${title}`))
+  printSeparator()
+}
+
+// Render a clean locale report
+function renderLocaleReport(
   fileName: string,
   filePath: string,
   totalKeys: number,
   usedKeys: string[],
+  protectedKeys: string[],
   unusedKeys: string[],
   missingKeys: string[],
   showUsed: boolean
-): string {
-  const lines: string[] = []
-  const W = 62
-
-  // Top border
-  lines.push('╔' + '═'.repeat(W) + '╗')
-
-  // Title centered
-  const titleText = `📄 ${fileName}`
-  const titleVisLen = visibleWidth(titleText)
-  const titlePadL = Math.floor((W - titleVisLen) / 2)
-  const titlePadR = W - titleVisLen - titlePadL
-  lines.push('║' + ' '.repeat(titlePadL) + chalk.bold.cyan(titleText) + ' '.repeat(titlePadR) + '║')
-
-  // Separator
-  lines.push('╠' + '═'.repeat(W) + '╣')
+): void {
+  // File title
+  console.log(chalk.bold.cyan(`\n📄 ${fileName}`))
+  printSeparator()
 
   // Summary
-  lines.push('║  ' + chalk.bold('Summary') + ' '.repeat(W - 10) + '║')
-  lines.push('║  ' + '─'.repeat(W - 4) + '  ║')
-  lines.push('║  ' + padEndVisible('Total Keys:', 16) + padStartVisible(String(totalKeys), 4) + ' '.repeat(W - 22) + '║')
-  lines.push('║  ' + padEndVisible(chalk.green('Used:'), 16) + padStartVisible(chalk.green(String(usedKeys.length)), 4) + ' '.repeat(W - 22) + '║')
-  lines.push('║  ' + padEndVisible(chalk.yellow('Unused:'), 16) + padStartVisible(chalk.yellow(String(unusedKeys.length)), 4) + ' '.repeat(W - 22) + '║')
-  lines.push('║  ' + padEndVisible(chalk.red('Missing:'), 16) + padStartVisible(chalk.red(String(missingKeys.length)), 4) + ' '.repeat(W - 22) + '║')
+  console.log(chalk.bold('  Summary'))
+  console.log(`  ${chalk.gray('Total Keys:')}  ${totalKeys}`)
+  console.log(`  ${chalk.green('Used:')}        ${usedKeys.length}`)
+  console.log(`  ${chalk.blue('Protected:')}   ${protectedKeys.length}`)
+  console.log(`  ${chalk.yellow('Unused:')}      ${unusedKeys.length}`)
+  console.log(`  ${chalk.red('Missing:')}     ${missingKeys.length}`)
 
   // Used Keys (only when --show-used)
   if (showUsed && usedKeys.length > 0) {
-    lines.push('╠' + '═'.repeat(W) + '╣')
-    lines.push('║  ' + chalk.green.bold('✓ Used Keys') + ' '.repeat(W - 14) + '║')
-    lines.push('║  ' + '─'.repeat(W - 4) + '  ║')
-
+    console.log()
+    console.log(chalk.green.bold('  ✓ Used Keys'))
     for (const key of usedKeys) {
       const location = findKeyLocation(filePath, key)
       const locText = location
-        ? createFileLink(filePath, location.line, chalk.cyan(`${location.file}:${location.line}`))
-        : chalk.gray('-')
-      const content = '    ' + padEndVisible(key, 28) + locText
-      lines.push('║' + padEndVisible(content, W) + '║')
+        ? chalk.cyan(`  ${location.file}:${location.line}`)
+        : chalk.gray('  -')
+      console.log(`    ${key} ${locText}`)
+    }
+  }
+
+  // Protected Keys
+  if (protectedKeys.length > 0) {
+    console.log()
+    console.log(chalk.blue.bold('  ◆ Protected Keys'))
+    for (const key of protectedKeys) {
+      const location = findKeyLocation(filePath, key)
+      const locText = location
+        ? chalk.cyan(`  ${location.file}:${location.line}`)
+        : chalk.gray('  -')
+      console.log(`    ${key} ${locText}`)
     }
   }
 
   // Unused Keys
   if (unusedKeys.length > 0) {
-    lines.push('╠' + '═'.repeat(W) + '╣')
-    lines.push('║  ' + chalk.yellow.bold('✗ Unused Keys') + ' '.repeat(W - 16) + '║')
-    lines.push('║  ' + '─'.repeat(W - 4) + '  ║')
-
+    console.log()
+    console.log(chalk.yellow.bold('  ✗ Unused Keys'))
     for (const key of unusedKeys) {
       const location = findKeyLocation(filePath, key)
       const locText = location
-        ? createFileLink(filePath, location.line, chalk.cyan(`${location.file}:${location.line}`))
-        : chalk.gray('-')
-      const content = '    ' + padEndVisible(key, 28) + locText
-      lines.push('║' + padEndVisible(content, W) + '║')
+        ? chalk.cyan(`  ${location.file}:${location.line}`)
+        : chalk.gray('  -')
+      console.log(`    ${key} ${locText}`)
     }
   }
 
   // Missing Keys
   if (missingKeys.length > 0) {
-    lines.push('╠' + '═'.repeat(W) + '╣')
-    lines.push('║  ' + chalk.red.bold('⚠ Missing Keys') + ' '.repeat(W - 17) + '║')
-    lines.push('║  ' + '─'.repeat(W - 4) + '  ║')
-
+    console.log()
+    console.log(chalk.red.bold('  ⚠ Missing Keys'))
     for (const key of missingKeys) {
-      const content = '    ' + key
-      lines.push('║' + padEndVisible(content, W) + '║')
+      console.log(`    ${key}`)
     }
   }
+}
 
-  // Bottom border
-  lines.push('╚' + '═'.repeat(W) + '╝')
+function resolveRuntimeOptions(options: { src?: string; locale?: string; config?: string }) {
+  let loaded: ReturnType<typeof loadConfig>
+  try {
+    loaded = loadConfig(options.config)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.log(chalk.red(`\n✗ ${message}\n`))
+    process.exit(1)
+  }
 
-  return lines.join('\n')
+  const src = options.src ?? loaded.config.src ?? findDefaultSrc()
+  const locale = options.locale ?? loaded.config.locale ?? findDefaultLocale()
+
+  return {
+    config: loaded.config,
+    configPath: loaded.configPath,
+    src,
+    locale,
+  }
+}
+
+function printDynamicKeys(dynamicKeys: Array<{ file: string; line: number; code: string }>): void {
+  if (dynamicKeys.length === 0) return
+
+  console.log()
+  printSectionHeader('Dynamic Keys (manual review required)')
+  for (let i = 0; i < dynamicKeys.length; i++) {
+    const dk = dynamicKeys[i]
+    const relativePath = path.relative(process.cwd(), dk.file)
+    const locText = chalk.cyan(`${relativePath}:${dk.line}`)
+    console.log(`  [${i}] ${locText}`)
+    console.log(`      ${chalk.gray(dk.code)}`)
+  }
+}
+
+function exitOnDynamicPolicy(
+  dynamicKeys: Array<{ file: string; line: number; code: string }>,
+  policy: string
+): void {
+  if (policy === 'error' && dynamicKeys.length > 0) {
+    console.log(chalk.red('\n✗ Dynamic i18n keys found and dynamicKeyPolicy is set to "error"\n'))
+    process.exit(1)
+  }
 }
 
 const program = new Command()
@@ -174,74 +190,62 @@ program.name('i18n-pruner').description('🌳 AST-based i18n key pruning tool')
 program
   .command('scan')
   .description('Scan and audit i18n keys')
-  .option('--src <path>', 'Source code directory', findDefaultSrc())
-  .option('--locale <path>', 'Locale JSON files directory', findDefaultLocale())
+  .option('--src <path>', 'Source code directory')
+  .option('--locale <path>', 'Locale JSON files directory')
+  .option('--config <path>', 'Path to i18n-pruner.config.json')
   .option('--show-used', 'Show used keys in report', false)
   .action(async (options) => {
-    console.log(chalk.bold.cyan('\n🌳 i18n Pruner\n'))
+    console.log(chalk.bold.cyan('\n🌳 i18n Pruner'))
+    const runtime = resolveRuntimeOptions(options)
 
     // Validate paths exist
-    if (!fs.existsSync(options.src)) {
-      console.log(chalk.red(`✗ Source directory not found: ${options.src}`))
-      console.log(chalk.gray('Use --src to specify the correct path'))
+    if (!fs.existsSync(runtime.src)) {
+      console.log(chalk.red(`\n✗ Source directory not found: ${runtime.src}`))
+      console.log(chalk.gray('Use --src to specify the correct path\n'))
       process.exit(1)
     }
-    if (!fs.existsSync(options.locale)) {
-      console.log(chalk.red(`✗ Locale directory not found: ${options.locale}`))
-      console.log(chalk.gray('Use --locale to specify the correct path'))
+    if (!fs.existsSync(runtime.locale)) {
+      console.log(chalk.red(`\n✗ Locale directory not found: ${runtime.locale}`))
+      console.log(chalk.gray('Use --locale to specify the correct path\n'))
       process.exit(1)
     }
-
-    const scanResult = await scanProject(options.src)
-    const localeReports = generateLocaleReports(options.locale, scanResult.usedKeys)
 
     // Global summary
-    const allKeys = loadLocaleKeys(options.locale)
-    const allUnused = [...allKeys].filter((key) => !scanResult.usedKeys.has(key))
+    const allKeys = loadLocaleKeys(runtime.locale)
+    const protectedKeys = resolveProtectedKeys(allKeys, runtime.config.protectedKeys)
+    const scanResult = await scanProject(runtime.src, runtime.config)
+    scanResult.protectedKeys = protectedKeys
 
-    const GW = 58
-    console.log(chalk.bold('╔' + '═'.repeat(GW) + '╗'))
-    console.log(chalk.bold('║') + chalk.bold.cyan(padEndVisible('GLOBAL SUMMARY', GW)) + chalk.bold('║'))
-    console.log(chalk.bold('╠' + '═'.repeat(GW) + '╣'))
-    console.log('║  ' + padEndVisible('Total Keys (all locales):', 30) + padStartVisible(String(allKeys.size), 6) + ' '.repeat(GW - 38) + '║')
-    console.log('║  ' + padEndVisible(chalk.green('Used in Code:'), 30) + padStartVisible(chalk.green(String(scanResult.usedKeys.size)), 6) + ' '.repeat(GW - 38) + '║')
-    console.log('║  ' + padEndVisible(chalk.yellow('Unused (all locales):'), 30) + padStartVisible(chalk.yellow(String(allUnused.length)), 6) + ' '.repeat(GW - 38) + '║')
-    console.log('║  ' + padEndVisible(chalk.red('Dynamic Risk:'), 30) + padStartVisible(chalk.red(String(scanResult.dynamicKeys.length)), 6) + ' '.repeat(GW - 38) + '║')
-    console.log(chalk.bold('╚' + '═'.repeat(GW) + '╝'))
-    console.log()
+    const effectiveUsedKeys = new Set([...scanResult.usedKeys, ...protectedKeys])
+    const localeReports = generateLocaleReports(runtime.locale, scanResult.usedKeys, protectedKeys)
+    const allUnused = [...allKeys].filter((key) => !effectiveUsedKeys.has(key))
+
+    printSectionHeader('Global Summary')
+    console.log(`  ${chalk.gray('Total Keys (all locales):')}  ${allKeys.size}`)
+    console.log(`  ${chalk.green('Used in Code:')}              ${scanResult.usedKeys.size}`)
+    console.log(`  ${chalk.blue('Protected by Config:')}       ${protectedKeys.size}`)
+    console.log(`  ${chalk.yellow('Unused (all locales):')}      ${allUnused.length}`)
+    console.log(`  ${chalk.red('Dynamic Risk:')}               ${scanResult.dynamicKeys.length}`)
 
     // Report for each locale file
     for (const report of localeReports) {
-      console.log(renderLocaleReportBox(
+      renderLocaleReport(
         report.fileName,
         report.filePath,
         report.totalKeys,
         report.usedKeys,
+        report.protectedKeys,
         report.unusedKeys,
         report.missingKeys,
         options.showUsed
-      ))
-      console.log()
+      )
     }
 
     // Dynamic Keys (global)
-    if (scanResult.dynamicKeys.length > 0) {
-      const DW = 58
-      console.log(chalk.bold('╔' + '═'.repeat(DW) + '╗'))
-      console.log(chalk.bold('║') + chalk.red.bold(padEndVisible('⚠ Dynamic Keys (manual review required)', DW)) + chalk.bold('║'))
-      console.log(chalk.bold('╠' + '═'.repeat(DW) + '╣'))
+    printDynamicKeys(scanResult.dynamicKeys)
+    exitOnDynamicPolicy(scanResult.dynamicKeys, runtime.config.dynamicKeyPolicy)
 
-      for (let i = 0; i < scanResult.dynamicKeys.length; i++) {
-        const dk = scanResult.dynamicKeys[i]
-        const relativePath = path.relative(process.cwd(), dk.file)
-        const locText = `${relativePath}:${dk.line}`
-        const content = `  [${i}] ${padEndVisible(locText, 35)} ${dk.code}`
-        console.log('║' + padEndVisible(content, DW) + '║')
-      }
-
-      console.log(chalk.bold('╚' + '═'.repeat(DW) + '╝'))
-      console.log()
-    }
+    console.log()
   })
 
 // ========================
@@ -250,54 +254,72 @@ program
 program
   .command('remove')
   .description('Remove unused i18n keys from all locale files')
-  .option('--src <path>', 'Source code directory', findDefaultSrc())
-  .option('--locale <path>', 'Locale JSON files directory', findDefaultLocale())
+  .option('--src <path>', 'Source code directory')
+  .option('--locale <path>', 'Locale JSON files directory')
+  .option('--config <path>', 'Path to i18n-pruner.config.json')
   .option('-y, --yes', 'Skip confirmation prompt', false)
   .action(async (options) => {
-    console.log(chalk.bold.cyan('\n🗑️  i18n Pruner - Remove\n'))
+    console.log(chalk.bold.cyan('\n🗑️  i18n Pruner - Remove'))
+    const runtime = resolveRuntimeOptions(options)
 
     // Validate paths exist
-    if (!fs.existsSync(options.src)) {
-      console.log(chalk.red(`✗ Source directory not found: ${options.src}`))
-      console.log(chalk.gray('Use --src to specify the correct path'))
+    if (!fs.existsSync(runtime.src)) {
+      console.log(chalk.red(`\n✗ Source directory not found: ${runtime.src}`))
+      console.log(chalk.gray('Use --src to specify the correct path\n'))
       process.exit(1)
     }
-    if (!fs.existsSync(options.locale)) {
-      console.log(chalk.red(`✗ Locale directory not found: ${options.locale}`))
-      console.log(chalk.gray('Use --locale to specify the correct path'))
+    if (!fs.existsSync(runtime.locale)) {
+      console.log(chalk.red(`\n✗ Locale directory not found: ${runtime.locale}`))
+      console.log(chalk.gray('Use --locale to specify the correct path\n'))
       process.exit(1)
     }
 
-    const scanResult = await scanProject(options.src)
-    const localeKeys = loadLocaleKeys(options.locale)
-    const unusedKeys = [...localeKeys].filter((key) => !scanResult.usedKeys.has(key))
+    const scanResult = await scanProject(runtime.src, runtime.config)
+    const localeKeys = loadLocaleKeys(runtime.locale)
+    const protectedKeys = resolveProtectedKeys(localeKeys, runtime.config.protectedKeys)
+    scanResult.protectedKeys = protectedKeys
+
+    printDynamicKeys(scanResult.dynamicKeys)
+    exitOnDynamicPolicy(scanResult.dynamicKeys, runtime.config.dynamicKeyPolicy)
+
+    if (
+      runtime.config.dynamicKeyPolicy !== 'ignore' &&
+      runtime.config.remove.blockOnDynamicKeys &&
+      scanResult.dynamicKeys.length > 0
+    ) {
+      console.log(chalk.red('\n✗ Dynamic i18n keys found and remove.blockOnDynamicKeys is enabled\n'))
+      process.exit(1)
+    }
+
+    const effectiveUsedKeys = new Set([...scanResult.usedKeys, ...protectedKeys])
+    const unusedKeys = [...localeKeys].filter((key) => !effectiveUsedKeys.has(key))
 
     if (unusedKeys.length === 0) {
-      console.log(chalk.green('✓ No unused keys to remove\n'))
+      console.log(chalk.green('\n✓ No unused keys to remove\n'))
       return
     }
 
     // Show keys to remove by locale
-    const localeReports = generateLocaleReports(options.locale, scanResult.usedKeys)
+    const localeReports = generateLocaleReports(runtime.locale, scanResult.usedKeys, protectedKeys)
     
     for (const report of localeReports) {
       if (report.unusedKeys.length > 0) {
-        console.log(renderLocaleReportBox(
+        renderLocaleReport(
           report.fileName,
           report.filePath,
           report.totalKeys,
           report.usedKeys,
+          report.protectedKeys,
           report.unusedKeys,
           report.missingKeys,
           false
-        ))
-        console.log()
+        )
       }
     }
 
     // Confirmation
     if (!options.yes) {
-      console.log(chalk.bold(`\n⚠  This will modify ${getLocaleFiles(options.locale).length} locale file(s)`))
+      console.log(chalk.bold(`\n⚠  This will modify ${getLocaleFiles(runtime.locale).length} locale file(s)`))
       const readline = await import('readline')
       const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
       const answer = await new Promise<string>((resolve) =>
@@ -312,12 +334,12 @@ program
     }
 
     // Perform removal
-    console.log(chalk.bold('\n🔄 Removing keys...\n'))
+    console.log(chalk.bold('\n🔄 Removing keys...'))
 
-    const removed = removeKeysFromLocales(options.locale, unusedKeys)
+    const removed = removeKeysFromLocales(runtime.locale, unusedKeys)
 
     // Show results
-    console.log(chalk.green.bold(`✓ Successfully removed ${Object.keys(removed).length} key(s):\n`))
+    console.log(chalk.green.bold(`\n✓ Successfully removed ${Object.keys(removed).length} key(s):`))
 
     // Group by file
     const byFile: Record<string, string[]> = {}
@@ -327,7 +349,7 @@ program
     }
 
     for (const [file, keys] of Object.entries(byFile)) {
-      console.log(chalk.bold(`${file}:`))
+      console.log(`\n${chalk.bold(file)}:`)
       for (const key of keys.sort()) {
         console.log(chalk.gray(`  - ${key}`))
       }

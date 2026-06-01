@@ -2,7 +2,9 @@ import * as path from 'path'
 import * as fs from 'fs'
 import fg from 'fast-glob'
 import { Node, Project } from 'ts-morph'
-import type { ScanResult } from './types'
+import { DEFAULT_CONFIG } from './config'
+import { matchesAnyPathPattern, matchesPathPattern } from './match'
+import type { ResolvedI18nPrunerConfig, ScanResult } from './types'
 
 function findTsConfig(srcPath: string): string | undefined {
   // Check if tsconfig.json exists in the source directory
@@ -29,9 +31,64 @@ function findTsConfig(srcPath: string): string | undefined {
   return undefined
 }
 
-export async function scanProject(src: string): Promise<ScanResult> {
+function isIgnoredByLineConfig(
+  filePath: string,
+  line: number,
+  config: ResolvedI18nPrunerConfig
+): boolean {
+  return config.ignoreLines.some((entry) => {
+    if (!matchesPathPattern(filePath, entry.file)) return false
+
+    if (entry.lines?.includes(line)) return true
+    return entry.ranges?.some((range) => line >= range.start && line <= range.end) ?? false
+  })
+}
+
+function hasIgnoreComment(sourceFile: import('ts-morph').SourceFile, line: number, config: ResolvedI18nPrunerConfig): boolean {
+  const lines = sourceFile.getFullText().split(/\r?\n/)
+  const currentLine = lines[line - 1] ?? ''
+  const previousLine = lines[line - 2] ?? ''
+
+  return (
+    currentLine.includes(config.ignoreComments.currentLine) ||
+    previousLine.includes(config.ignoreComments.nextLine)
+  )
+}
+
+function shouldIgnoreHit(
+  sourceFile: import('ts-morph').SourceFile,
+  line: number,
+  config: ResolvedI18nPrunerConfig
+): boolean {
+  return (
+    isIgnoredByLineConfig(sourceFile.getFilePath(), line, config) ||
+    hasIgnoreComment(sourceFile, line, config)
+  )
+}
+
+function pushDynamicKey(
+  dynamicKeys: ScanResult['dynamicKeys'],
+  sourceFile: import('ts-morph').SourceFile,
+  line: number,
+  code: string,
+  config: ResolvedI18nPrunerConfig
+): void {
+  if (config.dynamicKeyPolicy === 'ignore') return
+
+  dynamicKeys.push({
+    file: sourceFile.getFilePath(),
+    line,
+    code,
+  })
+}
+
+export async function scanProject(
+  src: string,
+  scanConfig: ResolvedI18nPrunerConfig = DEFAULT_CONFIG
+): Promise<ScanResult> {
   const srcPath = path.resolve(src)
   const tsConfigPath = findTsConfig(srcPath)
+  const config = scanConfig
 
   const projectOptions: any = {}
   if (tsConfigPath) {
@@ -49,13 +106,15 @@ export async function scanProject(src: string): Promise<ScanResult> {
 
   const project = new Project(projectOptions)
 
-  const files = await fg([`${srcPath}/**/*.{ts,tsx,js,jsx}`])
+  const files = (await fg([`${srcPath}/**/*.{ts,tsx,js,jsx}`]))
+    .filter((file) => !matchesAnyPathPattern(file, config.ignorePaths))
 
   files.forEach((file) => {
     project.addSourceFileAtPath(file)
   })
 
   const usedKeys = new Set<string>()
+  const protectedKeys = new Set<string>()
   const dynamicKeys: ScanResult['dynamicKeys'] = []
 
   for (const sourceFile of project.getSourceFiles()) {
@@ -72,9 +131,11 @@ export async function scanProject(src: string): Promise<ScanResult> {
         if (initializer && Node.isCallExpression(initializer)) {
           const fnName = initializer.getExpression().getText()
 
-          if (fnName === 'useTranslate') {
+          const namespaceHook = config.namespaceHooks.find((hook) => hook.name === fnName)
+
+          if (namespaceHook) {
             const varName = node.getName()
-            const arg = initializer.getArguments()[0]
+            const arg = initializer.getArguments()[namespaceHook.namespaceArgIndex]
 
             if (arg && Node.isStringLiteral(arg)) {
               translateMap.set(varName, arg.getLiteralText())
@@ -96,16 +157,15 @@ export async function scanProject(src: string): Promise<ScanResult> {
 
         if (!firstArg) return
 
-        const isTFunction = fnName === 't' || fnName === 'window.t' || translateMap.has(fnName)
+        const isTFunction = config.functionNames.includes(fnName) || translateMap.has(fnName)
 
         if (!isTFunction) return
 
+        const line = firstArg.getStartLineNumber()
+        if (shouldIgnoreHit(sourceFile, line, config)) return
+
         if (!Node.isStringLiteral(firstArg)) {
-          dynamicKeys.push({
-            file: sourceFile.getFilePath(),
-            line: firstArg.getStartLineNumber(),
-            code: firstArg.getText(),
-          })
+          pushDynamicKey(dynamicKeys, sourceFile, line, firstArg.getText(), config)
           return
         }
 
@@ -124,7 +184,7 @@ export async function scanProject(src: string): Promise<ScanResult> {
       if (Node.isJsxSelfClosingElement(node) || Node.isJsxOpeningElement(node)) {
         const tagName = node.getTagNameNode().getText()
 
-        if (tagName !== 'Trans') return
+        if (!config.transComponents.includes(tagName)) return
 
         const attrs = node.getAttributes()
 
@@ -135,24 +195,23 @@ export async function scanProject(src: string): Promise<ScanResult> {
           const attrNameNode = jsxAttr.getNameNode()
           const attrName = attrNameNode.getText()
 
-          if (attrName !== 'i18nKey') continue
+          if (!config.transKeyAttributes.includes(attrName)) continue
 
           const initializer = jsxAttr.getInitializer()
           if (!initializer) continue
 
+          const line = initializer.getStartLineNumber()
+          if (shouldIgnoreHit(sourceFile, line, config)) continue
+
           if (Node.isStringLiteral(initializer)) {
             usedKeys.add(initializer.getLiteralText())
           } else {
-            dynamicKeys.push({
-              file: sourceFile.getFilePath(),
-              line: initializer.getStartLineNumber(),
-              code: initializer.getText(),
-            })
+            pushDynamicKey(dynamicKeys, sourceFile, line, initializer.getText(), config)
           }
         }
       }
     })
   }
 
-  return { usedKeys, dynamicKeys }
+  return { usedKeys, protectedKeys, dynamicKeys }
 }
