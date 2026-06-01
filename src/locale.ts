@@ -18,6 +18,37 @@ export interface LocaleReport {
   missingKeys: string[]  // keys used in code but not in this locale file
 }
 
+function getJsonFilesInDir(dirPath: string): string[] {
+  if (!fs.existsSync(dirPath) || !fs.statSync(dirPath).isDirectory()) return []
+  return fs.readdirSync(dirPath)
+    .filter((file) => file.endsWith('.json'))
+    .map((file) => path.join(dirPath, file))
+}
+
+function getLocaleLanguageDirs(localePath: string): string[] {
+  if (!fs.existsSync(localePath) || !fs.statSync(localePath).isDirectory()) return []
+
+  return fs.readdirSync(localePath)
+    .map((entry) => path.join(localePath, entry))
+    .filter((entryPath) => fs.statSync(entryPath).isDirectory() && getJsonFilesInDir(entryPath).length > 0)
+}
+
+function isNamespacedLocaleStructure(localePath: string): boolean {
+  return getJsonFilesInDir(localePath).length === 0 && getLocaleLanguageDirs(localePath).length > 0
+}
+
+function loadNamespacedLocaleKeysFromDir(dirPath: string): Set<string> {
+  const keys = new Set<string>()
+
+  for (const filePath of getJsonFilesInDir(dirPath)) {
+    const namespace = path.basename(filePath, '.json')
+    const fileKeys = loadLocaleKeysFromFile(filePath)
+    fileKeys.forEach((key) => keys.add(`${namespace}.${key}`))
+  }
+
+  return keys
+}
+
 // Load keys from a single locale file
 export function loadLocaleKeysFromFile(filePath: string): Set<string> {
   const json = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
@@ -27,14 +58,18 @@ export function loadLocaleKeysFromFile(filePath: string): Set<string> {
 
 // Load all keys from all locale files (union)
 export function loadLocaleKeys(localePath: string): Set<string> {
-  const files = fs.readdirSync(localePath)
   const keys = new Set<string>()
 
-  for (const file of files) {
-    if (!file.endsWith('.json')) continue
+  if (isNamespacedLocaleStructure(localePath)) {
+    for (const langDir of getLocaleLanguageDirs(localePath)) {
+      const fileKeys = loadNamespacedLocaleKeysFromDir(langDir)
+      fileKeys.forEach((k) => keys.add(k))
+    }
+    return keys
+  }
 
-    const fullPath = path.join(localePath, file)
-    const fileKeys = loadLocaleKeysFromFile(fullPath)
+  for (const filePath of getJsonFilesInDir(localePath)) {
+    const fileKeys = loadLocaleKeysFromFile(filePath)
     fileKeys.forEach((k) => keys.add(k))
   }
 
@@ -55,7 +90,13 @@ export function loadNestedLocaleReferences(localePath: string): Set<string> {
 
       let match: RegExpExecArray | null
       while ((match = nestedKeyPattern.exec(value)) !== null) {
-        references.add(match[1])
+        const nestedKey = match[1]
+        if (nestedKey.includes(':')) {
+          const [namespace, rest] = nestedKey.split(':', 2)
+          references.add(`${namespace}.${rest}`)
+        } else {
+          references.add(nestedKey)
+        }
       }
     })
   }
@@ -65,8 +106,11 @@ export function loadNestedLocaleReferences(localePath: string): Set<string> {
 
 // Get all locale files
 export function getLocaleFiles(localePath: string): string[] {
-  const files = fs.readdirSync(localePath)
-  return files.filter((f) => f.endsWith('.json')).map((f) => path.join(localePath, f))
+  if (isNamespacedLocaleStructure(localePath)) {
+    return getLocaleLanguageDirs(localePath).flatMap((dirPath) => getJsonFilesInDir(dirPath))
+  }
+
+  return getJsonFilesInDir(localePath)
 }
 
 // Generate report for each locale file
@@ -76,9 +120,46 @@ export function generateLocaleReports(
   protectedKeys: Set<string> = new Set()
 ): LocaleReport[] {
   const reports: LocaleReport[] = []
-  const files = getLocaleFiles(localePath)
 
-  for (const file of files) {
+  if (isNamespacedLocaleStructure(localePath)) {
+    for (const dirPath of getLocaleLanguageDirs(localePath)) {
+      const fileKeys = loadNamespacedLocaleKeysFromDir(dirPath)
+      const usedInFile: string[] = []
+      const protectedInFile: string[] = []
+      const unusedInFile: string[] = []
+
+      fileKeys.forEach((key) => {
+        if (usedKeys.has(key)) {
+          usedInFile.push(key)
+        } else if (protectedKeys.has(key)) {
+          protectedInFile.push(key)
+        } else {
+          unusedInFile.push(key)
+        }
+      })
+
+      const missingInFile: string[] = []
+      usedKeys.forEach((key) => {
+        if (!fileKeys.has(key)) {
+          missingInFile.push(key)
+        }
+      })
+
+      reports.push({
+        fileName: `${path.basename(dirPath)}.json`,
+        filePath: dirPath,
+        totalKeys: fileKeys.size,
+        usedKeys: usedInFile.sort(),
+        protectedKeys: protectedInFile.sort(),
+        unusedKeys: unusedInFile.sort(),
+        missingKeys: missingInFile.sort(),
+      })
+    }
+
+    return reports
+  }
+
+  for (const file of getLocaleFiles(localePath)) {
     const fileKeys = loadLocaleKeysFromFile(file)
     const usedInFile: string[] = []
     const protectedInFile: string[] = []
@@ -148,6 +229,15 @@ export function expandUsedKeysFromLocaleSuffixes(
 
 // Find the line and column number of a key in a JSON file
 export function findKeyLocation(filePath: string, key: string): KeyLocation | null {
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+    const [namespace, ...rest] = key.split('.')
+    if (rest.length === 0) return null
+
+    const namespaceFile = path.join(filePath, `${namespace}.json`)
+    if (!fs.existsSync(namespaceFile)) return null
+    return findKeyLocation(namespaceFile, rest.join('.'))
+  }
+
   const content = fs.readFileSync(filePath, 'utf-8')
   const lines = content.split('\n')
 
@@ -204,9 +294,32 @@ export function removeKeysFromLocales(
   keysToRemove: string[]
 ): Record<string, { file: string; key: string }> {
   const removed: Record<string, { file: string; key: string }> = {}
-  const files = getLocaleFiles(localePath)
 
-  for (const file of files) {
+  if (isNamespacedLocaleStructure(localePath)) {
+    for (const dirPath of getLocaleLanguageDirs(localePath)) {
+      for (const key of keysToRemove) {
+        const [namespace, ...rest] = key.split('.')
+        if (rest.length === 0) continue
+
+        const namespaceFile = path.join(dirPath, `${namespace}.json`)
+        if (!fs.existsSync(namespaceFile)) continue
+
+        const json = JSON.parse(fs.readFileSync(namespaceFile, 'utf-8'))
+        const flatJson = flatten(json) as Record<string, unknown>
+        const namespacedKey = rest.join('.')
+
+        if (namespacedKey in flatJson) {
+          unflattenRemove(json, namespacedKey)
+          removed[`${path.basename(dirPath)}:${key}`] = { file: `${path.basename(dirPath)}/${namespace}.json`, key }
+          fs.writeFileSync(namespaceFile, JSON.stringify(json, null, 2))
+        }
+      }
+    }
+
+    return removed
+  }
+
+  for (const file of getLocaleFiles(localePath)) {
     const json = JSON.parse(fs.readFileSync(file, 'utf-8'))
     const flatJson = flatten(json) as Record<string, unknown>
 

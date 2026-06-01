@@ -6,6 +6,11 @@ import { DEFAULT_CONFIG } from './config'
 import { matchesAnyPathPattern, matchesPathPattern } from './match'
 import type { ResolvedI18nPrunerConfig, ScanResult } from './types'
 
+interface TranslationBinding {
+  namespace?: string
+  keyPrefix?: string
+}
+
 function findTsConfig(srcPath: string): string | undefined {
   // Check if tsconfig.json exists in the source directory
   const srcTsConfig = path.join(srcPath, 'tsconfig.json')
@@ -82,6 +87,79 @@ function pushDynamicKey(
   })
 }
 
+function normalizeTranslationKey(key: string, namespace?: string, keyPrefix?: string): string {
+  if (key.includes(':')) {
+    const [explicitNamespace, rest] = key.split(':', 2)
+    return `${explicitNamespace}.${rest}`
+  }
+
+  const keyWithPrefix = keyPrefix ? `${keyPrefix}.${key}` : key
+  return namespace ? `${namespace}.${keyWithPrefix}` : keyWithPrefix
+}
+
+function readStringLiteral(node?: import('ts-morph').Node): string | undefined {
+  if (!node) return undefined
+  if (Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)) {
+    return node.getLiteralText()
+  }
+  return undefined
+}
+
+function getStaticStringFromExpression(node?: import('ts-morph').Node): string | undefined {
+  if (!node) return undefined
+  if (Node.isStringLiteral(node) || Node.isNoSubstitutionTemplateLiteral(node)) {
+    return node.getLiteralText()
+  }
+  if (!Node.isJsxExpression(node)) {
+    return undefined
+  }
+
+  const expression = node.getExpression()
+  if (!expression) return undefined
+  return readStringLiteral(expression)
+}
+
+function getNamespaceFromUseTranslationCall(initializer: import('ts-morph').CallExpression): string | undefined {
+  const arg = initializer.getArguments()[0]
+  const directNamespace = readStringLiteral(arg)
+  if (directNamespace !== undefined) return directNamespace
+
+  if (!arg || !Node.isArrayLiteralExpression(arg)) {
+    return undefined
+  }
+
+  const firstElement = arg.getElements()[0]
+  return firstElement && Node.isStringLiteral(firstElement) ? firstElement.getLiteralText() : undefined
+}
+
+function getKeyPrefixFromOptionsArg(initializer: import('ts-morph').CallExpression): string | undefined {
+  const optionsArg = initializer.getArguments().find(Node.isObjectLiteralExpression)
+  if (!optionsArg) return undefined
+
+  for (const property of optionsArg.getProperties()) {
+    if (!Node.isPropertyAssignment(property)) continue
+    if (property.getName() !== 'keyPrefix') continue
+
+    return readStringLiteral(property.getInitializer())
+  }
+
+  return undefined
+}
+
+function getNamespaceOverride(args: import('ts-morph').Node[]): string | undefined {
+  const optionsArg = args.find(Node.isObjectLiteralExpression)
+  if (!optionsArg) return undefined
+
+  for (const property of optionsArg.getProperties()) {
+    if (!Node.isPropertyAssignment(property)) continue
+    if (property.getName() !== 'ns') continue
+
+    return readStringLiteral(property.getInitializer())
+  }
+
+  return undefined
+}
+
 function getWrapperFunctionBodyCall(initializer: import('ts-morph').Expression): import('ts-morph').CallExpression | undefined {
   if (!Node.isArrowFunction(initializer) && !Node.isFunctionExpression(initializer)) {
     return undefined
@@ -134,23 +212,8 @@ function isSimpleTranslateWrapperCall(
   return args.length > 0 && args.every((arg) => Node.isIdentifier(arg) && parameters.includes(arg.getText()))
 }
 
-function getStaticStringFromJsxInitializer(initializer: import('ts-morph').JsxAttribute['getInitializer'] extends () => infer T ? NonNullable<T> : never): string | undefined {
-  if (Node.isStringLiteral(initializer)) {
-    return initializer.getLiteralText()
-  }
-
-  if (!Node.isJsxExpression(initializer)) {
-    return undefined
-  }
-
-  const expression = initializer.getExpression()
-  if (!expression) return undefined
-
-  if (Node.isStringLiteral(expression) || Node.isNoSubstitutionTemplateLiteral(expression)) {
-    return expression.getLiteralText()
-  }
-
-  return undefined
+function getStaticStringFromJsxInitializer(initializer?: import('ts-morph').Node): string | undefined {
+  return getStaticStringFromExpression(initializer)
 }
 
 export async function scanProject(
@@ -190,6 +253,7 @@ export async function scanProject(
 
   for (const sourceFile of project.getSourceFiles()) {
     const translateMap = new Map<string, string>()
+    const translationBindingMap = new Map<string, TranslationBinding>()
 
     sourceFile.forEachDescendant((node) => {
       // ========================
@@ -202,14 +266,29 @@ export async function scanProject(
         if (initializer && Node.isCallExpression(initializer)) {
           const fnName = initializer.getExpression().getText()
 
+          if (fnName === 'useTranslation') {
+            const namespace = getNamespaceFromUseTranslationCall(initializer)
+            const keyPrefix = getKeyPrefixFromOptionsArg(initializer)
+            const nameNode = node.getNameNode()
+
+            if (Node.isObjectBindingPattern(nameNode)) {
+              nameNode.getElements().forEach((element) => {
+                const propertyName = element.getPropertyNameNode()?.getText() ?? element.getName()
+                if (propertyName !== 't') return
+                translationBindingMap.set(element.getName(), { namespace, keyPrefix })
+              })
+            }
+          }
+
           const namespaceHook = config.namespaceHooks.find((hook) => hook.name === fnName)
 
           if (namespaceHook) {
             const varName = node.getName()
             const arg = initializer.getArguments()[namespaceHook.namespaceArgIndex]
+            const namespace = readStringLiteral(arg)
 
-            if (arg && Node.isStringLiteral(arg)) {
-              translateMap.set(varName, arg.getLiteralText())
+            if (namespace !== undefined) {
+              translateMap.set(varName, namespace)
             }
           }
         }
@@ -228,7 +307,8 @@ export async function scanProject(
 
         if (!firstArg) return
 
-        const isTFunction = config.functionNames.includes(fnName) || translateMap.has(fnName)
+        const translationBinding = translationBindingMap.get(fnName)
+        const isTFunction = config.functionNames.includes(fnName) || translateMap.has(fnName) || translationBinding !== undefined
 
         if (!isTFunction) return
 
@@ -238,25 +318,38 @@ export async function scanProject(
 
         if (Node.isArrayLiteralExpression(firstArg)) {
           const elements = firstArg.getElements()
-          const literalKeys = elements.filter(Node.isStringLiteral)
+          const literalKeys = elements
+            .map((element) => readStringLiteral(element))
+            .filter((key): key is string => key !== undefined)
+          const namespace = getNamespaceOverride(args) ?? translationBinding?.namespace
+          const keyPrefix = translationBinding?.keyPrefix
 
           if (literalKeys.length === elements.length) {
-            literalKeys.forEach((keyNode) => usedKeys.add(keyNode.getLiteralText()))
+            literalKeys.forEach((key) => usedKeys.add(normalizeTranslationKey(key, namespace, keyPrefix)))
           } else {
             pushDynamicKey(dynamicKeys, sourceFile, line, firstArg.getText(), config)
           }
           return
         }
 
-        if (!Node.isStringLiteral(firstArg)) {
+        const staticFirstArg = readStringLiteral(firstArg)
+        if (staticFirstArg === undefined) {
           pushDynamicKey(dynamicKeys, sourceFile, line, firstArg.getText(), config)
           return
         }
 
-        let key = firstArg.getLiteralText()
+        let key = staticFirstArg
 
         if (translateMap.has(fnName)) {
           key = `${translateMap.get(fnName)}.${key}`
+        }
+
+        if (!translateMap.has(fnName)) {
+          key = normalizeTranslationKey(
+            key,
+            getNamespaceOverride(args) ?? translationBinding?.namespace,
+            translationBinding?.keyPrefix
+          )
         }
 
         usedKeys.add(key)
@@ -271,6 +364,10 @@ export async function scanProject(
         if (!config.transComponents.includes(tagName)) return
 
         const attrs = node.getAttributes()
+        const namespaceAttr = attrs.find((attr) => Node.isJsxAttribute(attr) && attr.getNameNode().getText() === 'ns')
+        const namespace = Node.isJsxAttribute(namespaceAttr)
+          ? getStaticStringFromJsxInitializer(namespaceAttr.getInitializer())
+          : undefined
 
         for (const attr of attrs) {
           if (!Node.isJsxAttribute(attr)) continue
@@ -289,7 +386,7 @@ export async function scanProject(
 
           const staticKey = getStaticStringFromJsxInitializer(initializer)
           if (staticKey !== undefined) {
-            usedKeys.add(staticKey)
+            usedKeys.add(normalizeTranslationKey(staticKey, namespace))
           } else {
             pushDynamicKey(dynamicKeys, sourceFile, line, initializer.getText(), config)
           }

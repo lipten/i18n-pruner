@@ -46,7 +46,14 @@ function findDefaultLocale(): string {
     if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
       // Check if it contains JSON files
       const files = fs.readdirSync(dir)
-      if (files.some(f => f.endsWith('.json'))) {
+      const hasJsonFiles = files.some((f) => f.endsWith('.json'))
+      const hasNamespacedJsonDirs = files.some((entry) => {
+        const entryPath = path.join(dir, entry)
+        if (!fs.existsSync(entryPath) || !fs.statSync(entryPath).isDirectory()) return false
+        return fs.readdirSync(entryPath).some((child) => child.endsWith('.json'))
+      })
+
+      if (hasJsonFiles || hasNamespacedJsonDirs) {
         return dir
       }
     }

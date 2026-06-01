@@ -81,8 +81,12 @@ i18n-pruner works with any i18n library that uses the following patterns:
 | Window object | `window.t('checkout.pay')` | ✅ |
 | Local wrapper | `const t = (key: string) => window.t(key)` | ✅ Wrapper body is ignored |
 | Custom hook | `const tt = useTranslate('profile'); tt('name')` | ✅ |
+| react-i18next namespace | `const { t } = useTranslation('dashboard'); t('title')` | ✅ |
+| react-i18next namespace array | `const { t } = useTranslation(['dashboard', 'common']); t('title')` | ✅ Uses the first namespace as default |
+| react-i18next keyPrefix | `const { t } = useTranslation('dashboard', { keyPrefix: 'OrderStatusBar' }); t('expired')` | ✅ |
 | Trans component | `<Trans i18nKey="common.welcome" />` | ✅ |
 | Trans expression literal | `<Trans i18nKey={"common.welcome"} />` | ✅ |
+| Trans namespace prop | `<Trans ns="settings" i18nKey="DeliveryNotificationsText" />` | ✅ |
 | Plural key | `t('cart.item', { count })` with `cart.item_one` / `cart.item_other` | ✅ |
 | Context key | `t('user.status', { context: 'male' })` with `user.status_male` | ✅ |
 | Plural + context | `t('invite.guest', { context: 'female', count })` with `invite.guest_female_other` | ✅ |
@@ -95,7 +99,9 @@ For plural and context forms, i18n-pruner uses the locale files to expand a sour
 
 ## Expected File Structure
 
-i18n-pruner expects your locale files to be JSON files with nested keys:
+i18n-pruner supports both flat locale files and namespaced locale directories.
+
+**Flat locale files:**
 
 ```
 project/
@@ -107,6 +113,25 @@ project/
 │   │   ├── zh.json
 │   │   └── ja.json
 │   └── i18n.ts                # i18n configuration
+└── package.json
+```
+
+**Namespaced locale directories (`src/i18n/<lang>/<namespace>.json`):**
+
+```
+project/
+├── src/
+│   ├── i18n/
+│   │   ├── en/
+│   │   │   ├── common.json
+│   │   │   ├── dashboard.json
+│   │   │   └── tracking_page.json
+│   │   └── zh/
+│   │       ├── common.json
+│   │       ├── dashboard.json
+│   │       └── tracking_page.json
+│   └── pages/
+│       └── Dashboard.tsx
 └── package.json
 ```
 
@@ -128,7 +153,7 @@ project/
 }
 ```
 
-The tool automatically flattens nested keys (e.g., `home.title`, `user.settings.theme`) for analysis.
+The tool automatically flattens nested keys (e.g., `home.title`, `user.settings.theme`) for analysis. In namespaced layouts, keys are reported as `namespace.key`, for example `common.ContactUs` or `dashboard.OrderStatusBar.expired`.
 
 ## Usage
 
