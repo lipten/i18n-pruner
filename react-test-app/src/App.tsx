@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { HomePage, LegacyComponent, ProfilePage, TransExample, DynamicExample } from './components/I18nExamples'
+import { HomePage, LegacyComponent, ProfilePage, TransExample, DynamicExample, SpecialKeyExamples } from './components/I18nExamples'
 import './i18n'
 
 function App() {
@@ -43,6 +43,11 @@ function App() {
         <p>{window.t('global.success')}</p>
         <p>{window.t('global.error')}</p>
         <p>{window.t('global.loading')}</p>
+      </section>
+
+      <section style={{ marginBottom: '30px', padding: '15px', border: '1px solid #ccc' }}>
+        <h2>Special Keys</h2>
+        <SpecialKeyExamples />
       </section>
 
       <section style={{ padding: '15px', background: '#ffe6e6', border: '1px solid #ff6666' }}>

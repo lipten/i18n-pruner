@@ -25,5 +25,30 @@
   },
   "user": {
     "profile": "用户资料"
+  },
+  "email": {
+    "title": "邮件标题"
+  },
+  "special": {
+    "plural": {
+      "item_one": "{{count}} 个项目",
+      "item_other": "{{count}} 个项目"
+    },
+    "context": {
+      "user_male": "他在线",
+      "user_female": "她在线"
+    },
+    "combo": {
+      "invite_female_one": "她邀请了 {{count}} 位访客",
+      "invite_female_other": "她邀请了 {{count}} 位访客"
+    },
+    "nesting": {
+      "message": "嵌套状态：$t(special.nesting.target)",
+      "target": "嵌套目标值"
+    },
+    "fallback": {
+      "primary": "主要备用消息",
+      "default": "默认备用消息"
+    }
   }
 }

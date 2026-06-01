@@ -12,7 +12,9 @@ import {
   removeKeysFromLocales, 
   getLocaleFiles, 
   findKeyLocation,
-  generateLocaleReports
+  generateLocaleReports,
+  expandUsedKeysFromLocaleSuffixes,
+  loadNestedLocaleReferences
 } from './locale'
 
 // No more file links, just plain text
@@ -135,6 +137,13 @@ function renderLocaleReport(
   }
 }
 
+function selectLocaleReports<T extends { fileName: string }>(reports: T[], showAllLocales: boolean): T[] {
+  if (showAllLocales) return reports
+
+  const englishReport = reports.find((report) => report.fileName === 'en.json')
+  return englishReport ? [englishReport] : reports.slice(0, 1)
+}
+
 function resolveRuntimeOptions(options: { src?: string; locale?: string; config?: string }) {
   let loaded: ReturnType<typeof loadConfig>
   try {
@@ -194,6 +203,7 @@ program
   .option('--locale <path>', 'Locale JSON files directory')
   .option('--config <path>', 'Path to i18n-pruner.config.json')
   .option('--show-used', 'Show used keys in report', false)
+  .option('--all-locales', 'Show reports for all locale files', false)
   .action(async (options) => {
     console.log(chalk.bold.cyan('\n🌳 i18n Pruner'))
     const runtime = resolveRuntimeOptions(options)
@@ -216,8 +226,11 @@ program
     const scanResult = await scanProject(runtime.src, runtime.config)
     scanResult.protectedKeys = protectedKeys
 
-    const effectiveUsedKeys = new Set([...scanResult.usedKeys, ...protectedKeys])
-    const localeReports = generateLocaleReports(runtime.locale, scanResult.usedKeys, protectedKeys)
+    const nestedLocaleReferences = loadNestedLocaleReferences(runtime.locale)
+    const codeAndNestedUsedKeys = new Set([...scanResult.usedKeys, ...nestedLocaleReferences])
+    const reportUsedKeys = expandUsedKeysFromLocaleSuffixes(allKeys, codeAndNestedUsedKeys)
+    const effectiveUsedKeys = new Set([...reportUsedKeys, ...protectedKeys])
+    const localeReports = generateLocaleReports(runtime.locale, reportUsedKeys, protectedKeys)
     const allUnused = [...allKeys].filter((key) => !effectiveUsedKeys.has(key))
 
     printSectionHeader('Global Summary')
@@ -228,7 +241,7 @@ program
     console.log(`  ${chalk.red('Dynamic Risk:')}               ${scanResult.dynamicKeys.length}`)
 
     // Report for each locale file
-    for (const report of localeReports) {
+    for (const report of selectLocaleReports(localeReports, options.allLocales)) {
       renderLocaleReport(
         report.fileName,
         report.filePath,
@@ -258,6 +271,7 @@ program
   .option('--locale <path>', 'Locale JSON files directory')
   .option('--config <path>', 'Path to i18n-pruner.config.json')
   .option('-y, --yes', 'Skip confirmation prompt', false)
+  .option('--all-locales', 'Show reports for all locale files', false)
   .action(async (options) => {
     console.log(chalk.bold.cyan('\n🗑️  i18n Pruner - Remove'))
     const runtime = resolveRuntimeOptions(options)
@@ -291,7 +305,10 @@ program
       process.exit(1)
     }
 
-    const effectiveUsedKeys = new Set([...scanResult.usedKeys, ...protectedKeys])
+    const nestedLocaleReferences = loadNestedLocaleReferences(runtime.locale)
+    const codeAndNestedUsedKeys = new Set([...scanResult.usedKeys, ...nestedLocaleReferences])
+    const reportUsedKeys = expandUsedKeysFromLocaleSuffixes(localeKeys, codeAndNestedUsedKeys)
+    const effectiveUsedKeys = new Set([...reportUsedKeys, ...protectedKeys])
     const unusedKeys = [...localeKeys].filter((key) => !effectiveUsedKeys.has(key))
 
     if (unusedKeys.length === 0) {
@@ -300,21 +317,19 @@ program
     }
 
     // Show keys to remove by locale
-    const localeReports = generateLocaleReports(runtime.locale, scanResult.usedKeys, protectedKeys)
+    const localeReports = generateLocaleReports(runtime.locale, reportUsedKeys, protectedKeys)
     
-    for (const report of localeReports) {
-      if (report.unusedKeys.length > 0) {
-        renderLocaleReport(
-          report.fileName,
-          report.filePath,
-          report.totalKeys,
-          report.usedKeys,
-          report.protectedKeys,
-          report.unusedKeys,
-          report.missingKeys,
-          false
-        )
-      }
+    for (const report of selectLocaleReports(localeReports, options.allLocales)) {
+      renderLocaleReport(
+        report.fileName,
+        report.filePath,
+        report.totalKeys,
+        report.usedKeys,
+        report.protectedKeys,
+        report.unusedKeys,
+        report.missingKeys,
+        false
+      )
     }
 
     // Confirmation

@@ -79,8 +79,15 @@ i18n-pruner works with any i18n library that uses the following patterns:
 | Window object | `window.t('checkout.pay')` | ✅ |
 | Custom hook | `const tt = useTranslate('profile'); tt('name')` | ✅ |
 | Trans component | `<Trans i18nKey="common.welcome" />` | ✅ |
+| Plural key | `t('cart.item', { count })` with `cart.item_one` / `cart.item_other` | ✅ |
+| Context key | `t('user.status', { context: 'male' })` with `user.status_male` | ✅ |
+| Plural + context | `t('invite.guest', { context: 'female', count })` with `invite.guest_female_other` | ✅ |
+| Nesting key | `t('message.nested')` where the value contains `$t(common.welcome)` | ✅ |
+| Fallback keys | `t(['error.404', 'error.default'])` | ✅ |
 | Dynamic key | `t(\`${dynamicVar}.title\`)` | ⚠️ Flagged |
 | Variable key | `<Trans i18nKey={dynamicKey} />` | ⚠️ Flagged |
+
+For plural and context forms, i18n-pruner uses the locale files to expand a source key to matching i18next suffix keys. For example, when code calls `t('cart.item', { count })`, locale keys like `cart.item_one` and `cart.item_other` are treated as used. Locale values that use i18next nesting, such as `$t(common.welcome)`, also mark the nested target key as used.
 
 ## Expected File Structure
 
@@ -135,6 +142,9 @@ npx i18n-pruner scan --src ./app --locale ./app/i18n
 # Show used keys (hidden by default)
 npx i18n-pruner scan --show-used
 
+# Show reports for all locale files (default report shows en.json only)
+npx i18n-pruner scan --all-locales
+
 # Use a config file
 npx i18n-pruner scan --config ./i18n-pruner.config.json
 ```
@@ -147,6 +157,7 @@ npx i18n-pruner scan --config ./i18n-pruner.config.json
 | `--locale <path>` | No | `src/locales` or `locales` | Locale JSON files directory. Auto-detects: `src/locales`, `src/i18n`, `locales`, `i18n`, `public/locales`, `messages`, `lang` |
 | `--config <path>` | No | `i18n-pruner.config.json` | Optional JSON config file |
 | `--show-used` | No | `false` | Show used keys in report |
+| `--all-locales` | No | `false` | Show reports for every locale file. By default only `en.json` is shown, falling back to the first locale file if `en.json` does not exist |
 
 **Default Detection Order:**
 
@@ -227,6 +238,9 @@ npx i18n-pruner remove --src ./app --locale ./app/i18n --yes
 
 # Use a config file
 npx i18n-pruner remove --config ./i18n-pruner.config.json
+
+# Show removal reports for all locale files
+npx i18n-pruner remove --all-locales
 ```
 
 **Options:**
@@ -237,6 +251,7 @@ npx i18n-pruner remove --config ./i18n-pruner.config.json
 | `--locale <path>` | No | `src/locales` or `locales` | Locale JSON files directory |
 | `--config <path>` | No | `i18n-pruner.config.json` | Optional JSON config file |
 | `-y, --yes` | No | `false` | Skip confirmation prompt |
+| `--all-locales` | No | `false` | Show reports for every locale file. By default only `en.json` is shown, falling back to the first locale file if `en.json` does not exist |
 
 **Example output:**
 
@@ -408,6 +423,8 @@ Each language file gets its own boxed report:
 - **Protected Keys** - Keys kept by config even when not found in source code
 - **Unused Keys** - Keys present in this file but not used or protected
 - **Missing Keys** - Keys used in code but missing from this file (translations not yet added)
+
+By default, the CLI only prints the `en.json` locale report to keep output focused. Use `--all-locales` to print every locale file report.
 
 ### Dynamic Keys
 

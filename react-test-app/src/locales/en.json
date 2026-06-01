@@ -28,5 +28,27 @@
   },
   "email": {
     "title": "Email title"
+  },
+  "special": {
+    "plural": {
+      "item_one": "{{count}} item",
+      "item_other": "{{count}} items"
+    },
+    "context": {
+      "user_male": "He is online",
+      "user_female": "She is online"
+    },
+    "combo": {
+      "invite_female_one": "She invited {{count}} guest",
+      "invite_female_other": "She invited {{count}} guests"
+    },
+    "nesting": {
+      "message": "Nested status: $t(special.nesting.target)",
+      "target": "Nested target value"
+    },
+    "fallback": {
+      "primary": "Primary fallback message",
+      "default": "Default fallback message"
+    }
   }
 }

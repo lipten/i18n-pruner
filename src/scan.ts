@@ -164,6 +164,18 @@ export async function scanProject(
         const line = firstArg.getStartLineNumber()
         if (shouldIgnoreHit(sourceFile, line, config)) return
 
+        if (Node.isArrayLiteralExpression(firstArg)) {
+          const elements = firstArg.getElements()
+          const literalKeys = elements.filter(Node.isStringLiteral)
+
+          if (literalKeys.length === elements.length) {
+            literalKeys.forEach((keyNode) => usedKeys.add(keyNode.getLiteralText()))
+          } else {
+            pushDynamicKey(dynamicKeys, sourceFile, line, firstArg.getText(), config)
+          }
+          return
+        }
+
         if (!Node.isStringLiteral(firstArg)) {
           pushDynamicKey(dynamicKeys, sourceFile, line, firstArg.getText(), config)
           return

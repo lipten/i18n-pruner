@@ -41,6 +41,28 @@ export function loadLocaleKeys(localePath: string): Set<string> {
   return keys
 }
 
+export function loadNestedLocaleReferences(localePath: string): Set<string> {
+  const files = getLocaleFiles(localePath)
+  const references = new Set<string>()
+  const nestedKeyPattern = /\$t\(\s*['"]?([A-Za-z0-9_.:-]+)['"]?/g
+
+  for (const file of files) {
+    const json = JSON.parse(fs.readFileSync(file, 'utf-8'))
+    const flatJson = flatten(json) as Record<string, unknown>
+
+    Object.values(flatJson).forEach((value) => {
+      if (typeof value !== 'string') return
+
+      let match: RegExpExecArray | null
+      while ((match = nestedKeyPattern.exec(value)) !== null) {
+        references.add(match[1])
+      }
+    })
+  }
+
+  return references
+}
+
 // Get all locale files
 export function getLocaleFiles(localePath: string): string[] {
   const files = fs.readdirSync(localePath)
@@ -92,6 +114,36 @@ export function generateLocaleReports(
   }
 
   return reports
+}
+
+export function expandUsedKeysFromLocaleSuffixes(
+  localeKeys: Set<string>,
+  usedKeys: Set<string>
+): Set<string> {
+  const expanded = new Set<string>()
+
+  usedKeys.forEach((key) => {
+    let matchedLocaleKey = false
+
+    if (localeKeys.has(key)) {
+      expanded.add(key)
+      matchedLocaleKey = true
+    }
+
+    const prefix = `${key}_`
+    localeKeys.forEach((localeKey) => {
+      if (localeKey.startsWith(prefix)) {
+        expanded.add(localeKey)
+        matchedLocaleKey = true
+      }
+    })
+
+    if (!matchedLocaleKey) {
+      expanded.add(key)
+    }
+  })
+
+  return expanded
 }
 
 // Find the line and column number of a key in a JSON file

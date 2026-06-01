@@ -59,3 +59,21 @@ export function DynamicExample() {
     </div>
   )
 }
+
+// Special i18next key forms
+export function SpecialKeyExamples() {
+  const { t } = useTranslation()
+
+  return (
+    <div>
+      <p>{t('special.plural.item', { count: 1 })}</p>
+      <p>{t('special.plural.item', { count: 3 })}</p>
+      <p>{t('special.context.user', { context: 'male' })}</p>
+      <p>{t('special.context.user', { context: 'female' })}</p>
+      <p>{t('special.combo.invite', { context: 'female', count: 1 })}</p>
+      <p>{t('special.combo.invite', { context: 'female', count: 2 })}</p>
+      <p>{t('special.nesting.message')}</p>
+      <p>{t(['special.fallback.primary', 'special.fallback.default'])}</p>
+    </div>
+  )
+}
