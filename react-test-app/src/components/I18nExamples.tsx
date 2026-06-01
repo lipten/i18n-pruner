@@ -55,6 +55,7 @@ export function TransExample() {
       <Trans i18nKey="common.welcome" />
       <Trans i18nKey="user.profile" />
       <Trans i18nKey="common.dynamic" />
+      <Trans i18nKey={"common.expression"} />
     </div>
   )
 }

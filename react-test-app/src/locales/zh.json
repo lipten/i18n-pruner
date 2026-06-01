@@ -21,7 +21,8 @@
     "email": "邮箱地址"
   },
   "common": {
-    "welcome": "欢迎使用我们的应用"
+    "welcome": "欢迎使用我们的应用",
+    "expression": "表达式属性键"
   },
   "user": {
     "profile": "用户资料"

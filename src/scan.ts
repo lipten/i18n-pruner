@@ -134,6 +134,25 @@ function isSimpleTranslateWrapperCall(
   return args.length > 0 && args.every((arg) => Node.isIdentifier(arg) && parameters.includes(arg.getText()))
 }
 
+function getStaticStringFromJsxInitializer(initializer: import('ts-morph').JsxAttribute['getInitializer'] extends () => infer T ? NonNullable<T> : never): string | undefined {
+  if (Node.isStringLiteral(initializer)) {
+    return initializer.getLiteralText()
+  }
+
+  if (!Node.isJsxExpression(initializer)) {
+    return undefined
+  }
+
+  const expression = initializer.getExpression()
+  if (!expression) return undefined
+
+  if (Node.isStringLiteral(expression) || Node.isNoSubstitutionTemplateLiteral(expression)) {
+    return expression.getLiteralText()
+  }
+
+  return undefined
+}
+
 export async function scanProject(
   src: string,
   scanConfig: ResolvedI18nPrunerConfig = DEFAULT_CONFIG
@@ -268,8 +287,9 @@ export async function scanProject(
           const line = initializer.getStartLineNumber()
           if (shouldIgnoreHit(sourceFile, line, config)) continue
 
-          if (Node.isStringLiteral(initializer)) {
-            usedKeys.add(initializer.getLiteralText())
+          const staticKey = getStaticStringFromJsxInitializer(initializer)
+          if (staticKey !== undefined) {
+            usedKeys.add(staticKey)
           } else {
             pushDynamicKey(dynamicKeys, sourceFile, line, initializer.getText(), config)
           }

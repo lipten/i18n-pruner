@@ -21,7 +21,8 @@
     "email": "Email Address"
   },
   "common": {
-    "welcome": "Welcome to our app"
+    "welcome": "Welcome to our app",
+    "expression": "Expression attribute key"
   },
   "user": {
     "profile": "User Profile"

@@ -2,6 +2,8 @@
 
 > 🌳 AST-based i18n key pruning tool for React projects. Prune unused translation keys from your locale files.
 
+[简体中文](README.zh-CN.md) | English
+
 **i18n-pruner** analyzes your React/TypeScript codebase using AST parsing to find unused, missing, and dynamic translation keys. It helps you keep your locale files clean and in sync with your code.
 
 ## Features
@@ -80,6 +82,7 @@ i18n-pruner works with any i18n library that uses the following patterns:
 | Local wrapper | `const t = (key: string) => window.t(key)` | ✅ Wrapper body is ignored |
 | Custom hook | `const tt = useTranslate('profile'); tt('name')` | ✅ |
 | Trans component | `<Trans i18nKey="common.welcome" />` | ✅ |
+| Trans expression literal | `<Trans i18nKey={"common.welcome"} />` | ✅ |
 | Plural key | `t('cart.item', { count })` with `cart.item_one` / `cart.item_other` | ✅ |
 | Context key | `t('user.status', { context: 'male' })` with `user.status_male` | ✅ |
 | Plural + context | `t('invite.guest', { context: 'female', count })` with `invite.guest_female_other` | ✅ |
