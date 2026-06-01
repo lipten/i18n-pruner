@@ -77,6 +77,7 @@ i18n-pruner works with any i18n library that uses the following patterns:
 |---------|---------|----------|
 | Direct call | `t('home.title')` | ✅ |
 | Window object | `window.t('checkout.pay')` | ✅ |
+| Local wrapper | `const t = (key: string) => window.t(key)` | ✅ Wrapper body is ignored |
 | Custom hook | `const tt = useTranslate('profile'); tt('name')` | ✅ |
 | Trans component | `<Trans i18nKey="common.welcome" />` | ✅ |
 | Plural key | `t('cart.item', { count })` with `cart.item_one` / `cart.item_other` | ✅ |

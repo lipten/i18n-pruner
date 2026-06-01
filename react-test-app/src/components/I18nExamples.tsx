@@ -25,6 +25,17 @@ export function LegacyComponent() {
   )
 }
 
+// Local wrapper around window.t
+export function WrapperTExample() {
+  const t = (key: string) => window.t(key)
+
+  return (
+    <div>
+      <p>{t('global.success')}</p>
+    </div>
+  )
+}
+
 // Custom hook useTranslate
 export function ProfilePage() {
   const tt = useTranslate('profile')

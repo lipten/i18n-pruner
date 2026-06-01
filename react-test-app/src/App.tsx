@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { HomePage, LegacyComponent, ProfilePage, TransExample, DynamicExample, SpecialKeyExamples } from './components/I18nExamples'
+import { HomePage, LegacyComponent, WrapperTExample, ProfilePage, TransExample, DynamicExample, SpecialKeyExamples } from './components/I18nExamples'
 import './i18n'
 
 function App() {
@@ -26,6 +26,11 @@ function App() {
       <section style={{ marginBottom: '30px', padding: '15px', border: '1px solid #ccc' }}>
         <h2>Legacy (window.t)</h2>
         <LegacyComponent />
+      </section>
+
+      <section style={{ marginBottom: '30px', padding: '15px', border: '1px solid #ccc' }}>
+        <h2>Wrapper t Function</h2>
+        <WrapperTExample />
       </section>
 
       <section style={{ marginBottom: '30px', padding: '15px', border: '1px solid #ccc' }}>

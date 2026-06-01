@@ -1,7 +1,7 @@
 import * as path from 'path'
 import * as fs from 'fs'
 import fg from 'fast-glob'
-import { Node, Project } from 'ts-morph'
+import { Node, Project, SyntaxKind } from 'ts-morph'
 import { DEFAULT_CONFIG } from './config'
 import { matchesAnyPathPattern, matchesPathPattern } from './match'
 import type { ResolvedI18nPrunerConfig, ScanResult } from './types'
@@ -80,6 +80,58 @@ function pushDynamicKey(
     line,
     code,
   })
+}
+
+function getWrapperFunctionBodyCall(initializer: import('ts-morph').Expression): import('ts-morph').CallExpression | undefined {
+  if (!Node.isArrowFunction(initializer) && !Node.isFunctionExpression(initializer)) {
+    return undefined
+  }
+
+  const body = initializer.getBody()
+  if (Node.isCallExpression(body)) {
+    return body
+  }
+
+  if (Node.isBlock(body)) {
+    const statements = body.getStatements()
+    if (statements.length !== 1) return undefined
+
+    const statement = statements[0]
+    if (!Node.isReturnStatement(statement)) return undefined
+
+    const expression = statement.getExpression()
+    return expression && Node.isCallExpression(expression) ? expression : undefined
+  }
+
+  return undefined
+}
+
+function isSimpleTranslateWrapperCall(
+  node: import('ts-morph').CallExpression,
+  config: ResolvedI18nPrunerConfig
+): boolean {
+  const declaration = node.getFirstAncestorByKind(SyntaxKind.VariableDeclaration)
+  if (!declaration) return false
+
+  const wrapperName = declaration.getName()
+  if (!config.functionNames.includes(wrapperName)) return false
+
+  const initializer = declaration.getInitializer()
+  if (!initializer) return false
+
+  const wrappedCall = getWrapperFunctionBodyCall(initializer)
+  if (wrappedCall !== node) return false
+
+  const targetName = wrappedCall.getExpression().getText()
+  if (!config.functionNames.includes(targetName)) return false
+  if (targetName === wrapperName) return false
+
+  const parameters = Node.isArrowFunction(initializer) || Node.isFunctionExpression(initializer)
+    ? initializer.getParameters().map((param) => param.getName())
+    : []
+
+  const args = wrappedCall.getArguments()
+  return args.length > 0 && args.every((arg) => Node.isIdentifier(arg) && parameters.includes(arg.getText()))
 }
 
 export async function scanProject(
@@ -163,6 +215,7 @@ export async function scanProject(
 
         const line = firstArg.getStartLineNumber()
         if (shouldIgnoreHit(sourceFile, line, config)) return
+        if (isSimpleTranslateWrapperCall(node, config)) return
 
         if (Node.isArrayLiteralExpression(firstArg)) {
           const elements = firstArg.getElements()
