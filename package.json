@@ -1,6 +1,6 @@
 {
   "name": "i18n-pruner",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "AST-based i18n key pruning tool - remove unused translation keys from your locale files",
   "type": "commonjs",
   "bin": {
