@@ -8,6 +8,11 @@ export interface KeyLocation {
   column: number
 }
 
+export interface MissingKeyLocation {
+  file: string
+  line: number
+}
+
 export interface LocaleReport {
   fileName: string
   filePath: string
@@ -15,7 +20,8 @@ export interface LocaleReport {
   usedKeys: string[]
   protectedKeys: string[]
   unusedKeys: string[]
-  missingKeys: string[]  // keys used in code but not in this locale file
+  missingKeys: string[]
+  missingKeyLocations: Map<string, MissingKeyLocation[]>
 }
 
 function getJsonFilesInDir(dirPath: string): string[] {
@@ -79,7 +85,7 @@ export function loadLocaleKeys(localePath: string): Set<string> {
 export function loadNestedLocaleReferences(localePath: string): Set<string> {
   const files = getLocaleFiles(localePath)
   const references = new Set<string>()
-  const nestedKeyPattern = /\$t\(\s*['"]?([A-Za-z0-9_.:-]+)['"]?/g
+  const nestedKeyPattern = /\$t\(\s*['"]?([A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)?)['"]?\s*[,\)]/g
 
   for (const file of files) {
     const json = JSON.parse(fs.readFileSync(file, 'utf-8'))
@@ -117,7 +123,8 @@ export function getLocaleFiles(localePath: string): string[] {
 export function generateLocaleReports(
   localePath: string,
   usedKeys: Set<string>,
-  protectedKeys: Set<string> = new Set()
+  protectedKeys: Set<string> = new Set(),
+  usedKeyLocations: Map<string, { file: string; line: number }[]> = new Map()
 ): LocaleReport[] {
   const reports: LocaleReport[] = []
 
@@ -139,9 +146,14 @@ export function generateLocaleReports(
       })
 
       const missingInFile: string[] = []
+      const missingKeyLocs: Map<string, MissingKeyLocation[]> = new Map()
       usedKeys.forEach((key) => {
         if (!fileKeys.has(key)) {
           missingInFile.push(key)
+          const locations = usedKeyLocations.get(key)
+          if (locations) {
+            missingKeyLocs.set(key, locations.map(loc => ({ file: loc.file, line: loc.line })))
+          }
         }
       })
 
@@ -153,6 +165,7 @@ export function generateLocaleReports(
         protectedKeys: protectedInFile.sort(),
         unusedKeys: unusedInFile.sort(),
         missingKeys: missingInFile.sort(),
+        missingKeyLocations: missingKeyLocs,
       })
     }
 
@@ -175,11 +188,15 @@ export function generateLocaleReports(
       }
     })
 
-    // Find keys used in code but missing in this locale file
     const missingInFile: string[] = []
+    const missingKeyLocs: Map<string, MissingKeyLocation[]> = new Map()
     usedKeys.forEach((key) => {
       if (!fileKeys.has(key)) {
         missingInFile.push(key)
+        const locations = usedKeyLocations.get(key)
+        if (locations) {
+          missingKeyLocs.set(key, locations.map(loc => ({ file: loc.file, line: loc.line })))
+        }
       }
     })
 
@@ -190,7 +207,8 @@ export function generateLocaleReports(
       usedKeys: usedInFile.sort(),
       protectedKeys: protectedInFile.sort(),
       unusedKeys: unusedInFile.sort(),
-      missingKeys: missingInFile.sort()
+      missingKeys: missingInFile.sort(),
+      missingKeyLocations: missingKeyLocs,
     })
   }
 

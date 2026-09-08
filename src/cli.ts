@@ -14,7 +14,8 @@ import {
   findKeyLocation,
   generateLocaleReports,
   expandUsedKeysFromLocaleSuffixes,
-  loadNestedLocaleReferences
+  loadNestedLocaleReferences,
+  type MissingKeyLocation
 } from './locale'
 
 // No more file links, just plain text
@@ -81,6 +82,7 @@ function renderLocaleReport(
   protectedKeys: string[],
   unusedKeys: string[],
   missingKeys: string[],
+  missingKeyLocations: Map<string, MissingKeyLocation[]>,
   showUsed: boolean
 ): void {
   // File title
@@ -139,7 +141,18 @@ function renderLocaleReport(
     console.log()
     console.log(chalk.red.bold('  ⚠ Missing Keys'))
     for (const key of missingKeys) {
-      console.log(`    ${key}`)
+      const locations = missingKeyLocations.get(key)
+      if (locations && locations.length > 0) {
+        const relativePath = path.relative(process.cwd(), locations[0].file)
+        const locText = chalk.cyan(`  ${relativePath}:${locations[0].line}`)
+        if (locations.length > 1) {
+          console.log(`    ${key} ${locText} ${chalk.gray(`(+${locations.length - 1})`)}`)
+        } else {
+          console.log(`    ${key} ${locText}`)
+        }
+      } else {
+        console.log(`    ${key}`)
+      }
     }
   }
 }
@@ -237,7 +250,7 @@ program
     const codeAndNestedUsedKeys = new Set([...scanResult.usedKeys, ...nestedLocaleReferences])
     const reportUsedKeys = expandUsedKeysFromLocaleSuffixes(allKeys, codeAndNestedUsedKeys)
     const effectiveUsedKeys = new Set([...reportUsedKeys, ...protectedKeys])
-    const localeReports = generateLocaleReports(runtime.locale, reportUsedKeys, protectedKeys)
+    const localeReports = generateLocaleReports(runtime.locale, reportUsedKeys, protectedKeys, scanResult.usedKeyLocations)
     const allUnused = [...allKeys].filter((key) => !effectiveUsedKeys.has(key))
 
     printSectionHeader('Global Summary')
@@ -257,6 +270,7 @@ program
         report.protectedKeys,
         report.unusedKeys,
         report.missingKeys,
+        report.missingKeyLocations,
         options.showUsed
       )
     }
@@ -324,7 +338,7 @@ program
     }
 
     // Show keys to remove by locale
-    const localeReports = generateLocaleReports(runtime.locale, reportUsedKeys, protectedKeys)
+    const localeReports = generateLocaleReports(runtime.locale, reportUsedKeys, protectedKeys, scanResult.usedKeyLocations)
     
     for (const report of selectLocaleReports(localeReports, options.allLocales)) {
       renderLocaleReport(
@@ -335,6 +349,7 @@ program
         report.protectedKeys,
         report.unusedKeys,
         report.missingKeys,
+        report.missingKeyLocations,
         false
       )
     }

@@ -55,6 +55,11 @@ export interface ResolvedI18nPrunerConfig {
   remove: RemoveConfig
 }
 
+export interface UsedKeyLocation {
+  file: string
+  line: number
+}
+
 export interface ScanResult {
   usedKeys: Set<string>
   protectedKeys: Set<string>
@@ -63,4 +68,5 @@ export interface ScanResult {
     line: number
     code: string
   }>
+  usedKeyLocations: Map<string, UsedKeyLocation[]>
 }

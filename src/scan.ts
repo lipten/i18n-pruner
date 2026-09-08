@@ -4,7 +4,7 @@ import fg from 'fast-glob'
 import { Node, Project, SyntaxKind } from 'ts-morph'
 import { DEFAULT_CONFIG } from './config'
 import { matchesAnyPathPattern, matchesPathPattern } from './match'
-import type { ResolvedI18nPrunerConfig, ScanResult } from './types'
+import type { ResolvedI18nPrunerConfig, ScanResult, UsedKeyLocation } from './types'
 
 interface TranslationBinding {
   namespace?: string
@@ -85,6 +85,21 @@ function pushDynamicKey(
     line,
     code,
   })
+}
+
+function recordKeyLocation(
+  usedKeyLocations: Map<string, UsedKeyLocation[]>,
+  key: string,
+  file: string,
+  line: number
+): void {
+  const location: UsedKeyLocation = { file, line }
+  const existing = usedKeyLocations.get(key)
+  if (existing) {
+    existing.push(location)
+  } else {
+    usedKeyLocations.set(key, [location])
+  }
 }
 
 function normalizeTranslationKey(key: string, namespace?: string, keyPrefix?: string): string {
@@ -250,10 +265,31 @@ export async function scanProject(
   const usedKeys = new Set<string>()
   const protectedKeys = new Set<string>()
   const dynamicKeys: ScanResult['dynamicKeys'] = []
+  const usedKeyLocations = new Map<string, UsedKeyLocation[]>()
 
   for (const sourceFile of project.getSourceFiles()) {
     const translateMap = new Map<string, string>()
     const translationBindingMap = new Map<string, TranslationBinding>()
+    const fileWithTranslationNamespaces: string[] = []
+
+    sourceFile.forEachDescendant((node) => {
+      // ========================
+      // withTranslation("namespace")(Component)
+      // 记录高阶组件的 namespace 到文件级别
+      // ========================
+      if (Node.isCallExpression(node)) {
+        const expr = node.getExpression()
+        if (Node.isIdentifier(expr) && expr.getText() === 'withTranslation') {
+          const args = node.getArguments()
+          if (args.length > 0) {
+            const namespace = readStringLiteral(args[0])
+            if (namespace) {
+              fileWithTranslationNamespaces.push(namespace)
+            }
+          }
+        }
+      }
+    })
 
     sourceFile.forEachDescendant((node) => {
       // ========================
@@ -325,7 +361,11 @@ export async function scanProject(
           const keyPrefix = translationBinding?.keyPrefix
 
           if (literalKeys.length === elements.length) {
-            literalKeys.forEach((key) => usedKeys.add(normalizeTranslationKey(key, namespace, keyPrefix)))
+            literalKeys.forEach((key) => {
+              const normalizedKey = normalizeTranslationKey(key, namespace, keyPrefix)
+              usedKeys.add(normalizedKey)
+              recordKeyLocation(usedKeyLocations, normalizedKey, sourceFile.getFilePath(), line)
+            })
           } else {
             pushDynamicKey(dynamicKeys, sourceFile, line, firstArg.getText(), config)
           }
@@ -339,20 +379,24 @@ export async function scanProject(
         }
 
         let key = staticFirstArg
+        const namespaceOverride = getNamespaceOverride(args)
+        const hocNamespace = translationBinding?.namespace
 
         if (translateMap.has(fnName)) {
           key = `${translateMap.get(fnName)}.${key}`
-        }
-
-        if (!translateMap.has(fnName)) {
+        } else if (!namespaceOverride && !hocNamespace && fileWithTranslationNamespaces.length > 0) {
+          // 使用 withTranslation 指定的第一个 namespace
+          key = `${fileWithTranslationNamespaces[0]}.${key}`
+        } else if (!translateMap.has(fnName)) {
           key = normalizeTranslationKey(
             key,
-            getNamespaceOverride(args) ?? translationBinding?.namespace,
+            namespaceOverride ?? hocNamespace,
             translationBinding?.keyPrefix
           )
         }
 
         usedKeys.add(key)
+        recordKeyLocation(usedKeyLocations, key, sourceFile.getFilePath(), line)
       }
 
       // ========================
@@ -386,7 +430,9 @@ export async function scanProject(
 
           const staticKey = getStaticStringFromJsxInitializer(initializer)
           if (staticKey !== undefined) {
-            usedKeys.add(normalizeTranslationKey(staticKey, namespace))
+            const normalizedKey = normalizeTranslationKey(staticKey, namespace)
+            usedKeys.add(normalizedKey)
+            recordKeyLocation(usedKeyLocations, normalizedKey, sourceFile.getFilePath(), line)
           } else {
             pushDynamicKey(dynamicKeys, sourceFile, line, initializer.getText(), config)
           }
@@ -395,5 +441,5 @@ export async function scanProject(
     })
   }
 
-  return { usedKeys, protectedKeys, dynamicKeys }
+  return { usedKeys, protectedKeys, dynamicKeys, usedKeyLocations }
 }
